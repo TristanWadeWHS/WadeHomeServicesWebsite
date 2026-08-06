@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { SiteShell } from "./components/SiteShell";
-import { services } from "./lib/siteContent";
+import { reviews, services } from "./lib/siteContent";
 
 const steps = [
   {
@@ -80,21 +80,50 @@ export default function Home() {
         </div>
       </section>
 
-      <section className="proof section section--split">
-        <div>
+      <section className="proof section">
+        <div className="section-heading section-heading--wide">
           <p className="eyebrow">Trust Proof</p>
-          <h2>Built for real local proof as the business grows.</h2>
+          <h2>5-star feedback from homeowners who needed it handled.</h2>
           <p>
-            This draft intentionally uses placeholders for reviews, licenses,
-            service radius, and project photos until Wade Home Services confirms
-            the exact details.
+            Public Yelp reviews we could verify for Wade Home Services are rated
+            5 stars. Google reviews can be added here after we capture the exact
+            review text from the live profile.
           </p>
         </div>
-        <div className="proof-list" aria-label="Trust proof placeholders">
-          <span>Verified customer reviews placeholder</span>
-          <span>Before-and-after work gallery placeholder</span>
-          <span>Insurance or license details placeholder</span>
-          <span>Local service area confirmation placeholder</span>
+        <div className="review-rail" aria-label="Customer review carousel">
+          {reviews.map((review) => (
+            <article className="review-card" key={`${review.author}-${review.date}`}>
+              <div className="stars" aria-label="5 out of 5 stars">
+                ★★★★★
+              </div>
+              <p>{review.quote}</p>
+              <div className="review-meta">
+                <strong>{review.author}</strong>
+                <span>{review.location}</span>
+                <span>
+                  {review.source} · {review.date}
+                </span>
+              </div>
+            </article>
+          ))}
+        </div>
+        <div className="review-actions">
+          <a
+            className="button button--dark"
+            href="https://www.yelp.com/not_recommended_reviews/wade-home-services-mission-viejo"
+            rel="noreferrer"
+            target="_blank"
+          >
+            View Yelp Reviews
+          </a>
+          <a
+            className="button button--ghost"
+            href="https://www.google.com/search?q=wade+home+services"
+            rel="noreferrer"
+            target="_blank"
+          >
+            View Google Profile
+          </a>
         </div>
       </section>
 

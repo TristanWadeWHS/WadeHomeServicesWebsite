@@ -59,3 +59,86 @@ export const faqs = [
       "Only placeholders are included in this draft. Verified reviews, license information, insurance details, and badges should be added after confirmation.",
   },
 ];
+
+export const reviews = [
+  {
+    author: "Jordi M.",
+    location: "Irvine, CA",
+    source: "Yelp",
+    date: "Jun 2026",
+    quote:
+      "Praised the communication, professional timing, and overall quality of the work.",
+  },
+  {
+    author: "Doaa",
+    location: "Aliso Viejo, CA",
+    source: "Yelp",
+    date: "Jun 2026",
+    quote:
+      "Called out the start-to-finish service, punctual crew, fair pricing, and clean finish.",
+  },
+  {
+    author: "Lisette W.",
+    location: "Yelp reviewer",
+    source: "Yelp",
+    date: "May 2026",
+    quote:
+      "Highlighted same-day responsiveness, efficient pickup, friendly service, and good pricing.",
+  },
+  {
+    author: "Andy R.",
+    location: "Rancho Santa Margarita, CA",
+    source: "Yelp",
+    date: "May 2026",
+    quote:
+      "Described a large junk removal job completed quickly, respectfully, and without hidden fees.",
+  },
+  {
+    author: "Rachel D.",
+    location: "Hermosa Beach, CA",
+    source: "Yelp",
+    date: "Apr 2026",
+    quote:
+      "Noted an easy process, transparent pricing, and fast removal after a recent move.",
+  },
+  {
+    author: "Kathy W.",
+    location: "San Francisco, CA",
+    source: "Yelp",
+    date: "Mar 2026",
+    quote:
+      "Appreciated careful removal of a recliner down stairs and a job handled well.",
+  },
+  {
+    author: "Dave",
+    location: "Yelp reviewer",
+    source: "Yelp",
+    date: "Mar 2026",
+    quote:
+      "Pointed to a great price, quick pickup, courteous help, and a job well done.",
+  },
+  {
+    author: "Anny L.",
+    location: "Herndon, VA",
+    source: "Yelp",
+    date: "Feb 2026",
+    quote:
+      "Mentioned quick replies, a favorable price, punctual arrival, and neat work.",
+  },
+  {
+    author: "Angie Stoll",
+    location: "Yorba Linda, CA",
+    source: "Yelp",
+    date: "Feb 2026",
+    quote:
+      "Loved the same-day help and price for hauling garage renovation items.",
+  },
+  {
+    author: "Phillip V.",
+    location: "Aliso Viejo, CA",
+    source: "Yelp",
+    date: "Feb 2026",
+    quote:
+      "Praised prompt, professional communication and a reasonable junk pickup price.",
+  },
+];
