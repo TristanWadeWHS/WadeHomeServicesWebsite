@@ -93,6 +93,7 @@ export default function Home() {
         <div className="review-rail" aria-label="Customer review carousel">
           {reviews.map((review) => (
             <article className="review-card" key={`${review.author}-${review.date}`}>
+              <span className="source-badge source-badge--yelp">Yelp</span>
               <div className="stars" aria-label="5 out of 5 stars">
                 ★★★★★
               </div>

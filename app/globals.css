@@ -346,12 +346,34 @@ p {
   scroll-snap-align: start;
 }
 
+.source-badge {
+  align-self: flex-start;
+  align-items: center;
+  border-radius: 999px;
+  display: inline-flex;
+  font-size: 0.82rem;
+  font-weight: 900;
+  min-height: 30px;
+  padding: 6px 12px;
+}
+
+.source-badge--yelp {
+  background: #d32323;
+  color: white;
+}
+
 .stars {
   color: #a97827;
-  font-size: 1rem;
+  font-size: 0;
   font-weight: 900;
   letter-spacing: 0;
   margin-bottom: 22px;
+  margin-top: 18px;
+}
+
+.stars::before {
+  content: "*****";
+  font-size: 1rem;
 }
 
 .review-card p {
