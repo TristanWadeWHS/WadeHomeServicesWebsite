@@ -1,4 +1,3 @@
-import Image from "next/image";
 import Link from "next/link";
 import { SiteShell } from "./components/SiteShell";
 import { services } from "./lib/siteContent";
@@ -38,15 +37,14 @@ export default function Home() {
             </a>
           </div>
         </div>
-        <div className="hero__media" aria-label="Video-ready showcase area">
-          <Image
-            src="/wade-home-services-logo.png"
-            alt="Wade Home Services logo"
-            width={1024}
-            height={1024}
-            priority
+        <div className="hero__media" aria-label="Wade Home Services work video">
+          <iframe
+            src="https://www.youtube.com/embed/1D-1jAJewoo"
+            title="Wade Home Services work video"
+            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+            allowFullScreen
           />
-          <div className="hero__media-label">Work video placeholder</div>
+          <div className="hero__media-label">Featured work video</div>
         </div>
       </section>
 

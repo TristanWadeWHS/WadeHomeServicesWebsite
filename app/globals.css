@@ -219,15 +219,14 @@ p {
   display: flex;
   justify-content: center;
   overflow: hidden;
-  padding: 36px;
+  padding: 0;
   position: relative;
 }
 
-.hero__media img {
-  height: 84%;
-  object-fit: contain;
-  opacity: 0.82;
-  width: 84%;
+.hero__media iframe {
+  border: 0;
+  height: 100%;
+  width: 100%;
 }
 
 .hero__media-label {
