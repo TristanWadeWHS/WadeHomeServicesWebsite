@@ -16,8 +16,8 @@ export function ServicePage({ service }: { service: Service }) {
         <h1>{service.title}</h1>
         <p>{service.summary}</p>
         <div className="actions">
-          <a className="button button--primary" href="/#booking">
-            Call
+          <a className="button button--primary" href="tel:+19494245605">
+            Call 949-424-5605
           </a>
           <a className="button button--dark" href="/#booking">
             Book Now

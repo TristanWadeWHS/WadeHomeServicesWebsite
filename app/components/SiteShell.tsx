@@ -19,8 +19,8 @@ export function SiteShell({ children }: { children: ReactNode }) {
           <Image
             src="/wade-home-services-logo.png"
             alt="Wade Home Services"
-            width={160}
-            height={160}
+            width={220}
+            height={220}
             priority
           />
         </Link>
@@ -32,8 +32,8 @@ export function SiteShell({ children }: { children: ReactNode }) {
           ))}
         </nav>
         <div className="header-actions">
-          <a className="button button--ghost" href="/#booking">
-            Call
+          <a className="button button--ghost" href="tel:+19494245605">
+            Call 949-424-5605
           </a>
           <a className="button button--primary" href="/#booking">
             Book Now

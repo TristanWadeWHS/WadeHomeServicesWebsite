@@ -29,8 +29,8 @@ export default function Home() {
             respectful property handling, and a polished finish.
           </p>
           <div className="actions">
-            <a className="button button--primary" href="#booking">
-              Call Wade Home Services
+            <a className="button button--primary" href="tel:+19494245605">
+              Call 949-424-5605
             </a>
             <a className="button button--light" href="#booking">
               Book Now
@@ -146,13 +146,12 @@ export default function Home() {
       <section className="final-cta section" id="booking">
         <h2>Ready to clear the space or move the project forward?</h2>
         <p>
-          Add the confirmed phone number, booking form, or scheduling link here.
-          Until then, this section keeps the call-to-action visible without
-          publishing unverified contact details.
+          Call Wade Home Services at 949-424-5605 or use Book Now to start
+          the estimate request.
         </p>
         <div className="actions actions--center">
-          <a className="button button--primary" href="#booking">
-            Call
+          <a className="button button--primary" href="tel:+19494245605">
+            Call 949-424-5605
           </a>
           <a className="button button--dark" href="#booking">
             Book Now
