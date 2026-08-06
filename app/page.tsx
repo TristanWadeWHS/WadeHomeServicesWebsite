@@ -39,7 +39,7 @@ export default function Home() {
         </div>
         <div className="hero__media" aria-label="Wade Home Services work video">
           <iframe
-            src="https://www.youtube.com/embed/1D-1jAJewoo"
+            src="https://www.youtube.com/embed/1D-1jAJewoo?autoplay=1&mute=1&playsinline=1&rel=0&vq=hd1080"
             title="Wade Home Services work video"
             allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
             allowFullScreen
