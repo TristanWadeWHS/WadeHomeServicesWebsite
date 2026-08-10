@@ -1,21 +1,51 @@
 import Link from "next/link";
 import { SiteShell } from "./components/SiteShell";
-import { reviews, services } from "./lib/siteContent";
+import { reviews, services, yelpUrl } from "./lib/siteContent";
 
 const steps = [
   {
     title: "Send the details",
     text: "Tell us what needs to go, what needs to come down, or what needs to move. Photos are helpful when available.",
+    icon: "message",
   },
   {
     title: "Get a clear plan",
     text: "We confirm access, timing, disposal or storage needs, and the right crew size before work begins.",
+    icon: "plan",
   },
   {
     title: "We handle the work",
     text: "The team arrives ready to protect the property, work efficiently, and leave the area swept and usable.",
+    icon: "truck",
   },
 ];
+
+function ProcessIcon({ type }: { type: string }) {
+  if (type === "message") {
+    return (
+      <svg className="process-icon" aria-hidden="true" viewBox="0 0 48 48">
+        <path d="M14 16h20a6 6 0 0 1 6 6v7a6 6 0 0 1-6 6H24l-9 6v-6h-1a6 6 0 0 1-6-6v-7a6 6 0 0 1 6-6Z" />
+        <path d="M17 23h15M17 29h10" />
+      </svg>
+    );
+  }
+
+  if (type === "plan") {
+    return (
+      <svg className="process-icon" aria-hidden="true" viewBox="0 0 48 48">
+        <path d="M16 10h16l3 5v23a4 4 0 0 1-4 4H17a4 4 0 0 1-4-4V15l3-5Z" />
+        <path d="M19 10v7h10v-7M19 27l4 4 8-9M19 36h12" />
+      </svg>
+    );
+  }
+
+  return (
+    <svg className="process-icon" aria-hidden="true" viewBox="0 0 48 48">
+      <path d="M7 17h22v16H7zM29 23h7l5 6v4H29z" />
+      <path d="M14 37a4 4 0 1 0 0-8 4 4 0 0 0 0 8ZM35 37a4 4 0 1 0 0-8 4 4 0 0 0 0 8ZM11 21h12" />
+    </svg>
+  );
+}
 
 export default function Home() {
   return (
@@ -29,8 +59,8 @@ export default function Home() {
             respectful property handling, and a polished finish.
           </p>
           <div className="actions">
-            <a className="button button--primary" href="tel:+19494245605">
-              Call 949-424-5605
+            <a className="button button--on-green" href="tel:+19494245605">
+              Call Wade Home Services
             </a>
             <a className="button button--light" href="#booking">
               Book Now
@@ -72,7 +102,10 @@ export default function Home() {
         <div className="process-grid">
           {steps.map((step, index) => (
             <article className="process-step" key={step.title}>
-              <div className="step-number">0{index + 1}</div>
+              <div className="process-step__top">
+                <ProcessIcon type={step.icon} />
+                <div className="step-number">0{index + 1}</div>
+              </div>
               <h3>{step.title}</h3>
               <p>{step.text}</p>
             </article>
@@ -95,14 +128,14 @@ export default function Home() {
             <article className="review-card" key={`${review.author}-${review.date}`}>
               <span className="source-badge source-badge--yelp">Yelp</span>
               <div className="stars" aria-label="5 out of 5 stars">
-                ★★★★★
+                5 star rating
               </div>
               <p>{review.quote}</p>
               <div className="review-meta">
                 <strong>{review.author}</strong>
                 <span>{review.location}</span>
                 <span>
-                  {review.source} · {review.date}
+                  {review.source} - {review.date}
                 </span>
               </div>
             </article>
@@ -111,7 +144,7 @@ export default function Home() {
         <div className="review-actions">
           <a
             className="button button--dark"
-            href="https://www.yelp.com/not_recommended_reviews/wade-home-services-mission-viejo"
+            href={yelpUrl}
             rel="noreferrer"
             target="_blank"
           >

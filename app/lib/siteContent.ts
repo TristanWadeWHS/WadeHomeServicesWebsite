@@ -10,6 +10,23 @@ export const services = [
       "Garage, shed, basement, and storage cleanouts",
       "Debris removal after small projects or property turnover",
     ],
+    photos: [
+      {
+        src: "/job-photos/junk-removal-load.jpg",
+        alt: "Loaded Wade Home Services junk removal trailer after a residential cleanout",
+        label: "Loaded and ready for haul-away",
+      },
+      {
+        src: "/job-photos/junk-removal-garage-clear.jpg",
+        alt: "Cleared residential garage after junk removal work",
+        label: "Garage cleared for the next use",
+      },
+      {
+        src: "/job-photos/junk-removal-exterior-clear.jpg",
+        alt: "Residential driveway area after exterior cleanout work",
+        label: "Exterior areas reset and usable",
+      },
+    ],
   },
   {
     title: "Demolition",
@@ -36,6 +53,9 @@ export const services = [
     ],
   },
 ];
+
+export const yelpUrl =
+  "https://www.yelp.com/biz/wade-home-services-mission-viejo?osq=Wade+Home+Services&dd_referrer=https%3A%2F%2Fwww.yelp.com%2F";
 
 export const faqs = [
   {

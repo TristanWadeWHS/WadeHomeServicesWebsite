@@ -16,13 +16,19 @@ export function SiteShell({ children }: { children: ReactNode }) {
     <>
       <header className="site-header">
         <Link className="brand" href="/" aria-label="Wade Home Services home">
-          <Image
-            src="/wade-home-services-logo.png"
-            alt="Wade Home Services"
-            width={220}
-            height={220}
-            priority
-          />
+          <span className="brand__mark">
+            <Image
+              src="/wade-home-services-logo.png"
+              alt=""
+              width={300}
+              height={300}
+              priority
+            />
+          </span>
+          <span className="brand__copy">
+            <span className="brand__name">Wade Home Services</span>
+            <span className="brand__tagline">Orange County cleanouts</span>
+          </span>
         </Link>
         <nav className="site-nav" aria-label="Primary navigation">
           {navItems.map((item) => (
@@ -35,9 +41,9 @@ export function SiteShell({ children }: { children: ReactNode }) {
           <a className="button button--ghost" href="tel:+19494245605">
             Call 949-424-5605
           </a>
-          <a className="button button--primary" href="/#booking">
+          <Link className="button button--primary" href="/#booking">
             Book Now
-          </a>
+          </Link>
         </div>
       </header>
       <main>{children}</main>
