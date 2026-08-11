@@ -53,7 +53,7 @@ export default function Home() {
       <section className="hero section">
         <div className="hero__content">
           <p className="eyebrow">Wade Home Services</p>
-          <h1>Cleanouts, light demolition, storage, and relocation handled with care.</h1>
+          <h1>Your Trusted Property Services Team.</h1>
           <p className="hero__statement">
             A local home-services crew for projects that need a reliable plan,
             respectful property handling, and a polished finish.
