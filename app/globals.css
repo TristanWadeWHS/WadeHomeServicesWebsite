@@ -200,7 +200,7 @@ a {
   color: white;
   display: grid;
   gap: clamp(28px, 5vw, 72px);
-  grid-template-columns: minmax(0, 1.08fr) minmax(300px, 0.92fr);
+  grid-template-columns: minmax(0, 0.82fr) minmax(420px, 1.18fr);
   min-height: calc(100vh - 124px);
 }
 
@@ -268,7 +268,7 @@ p {
 .hero__media {
   align-items: center;
   align-self: center;
-  aspect-ratio: 4 / 3;
+  aspect-ratio: 16 / 10;
   background:
     linear-gradient(180deg, rgba(244, 245, 242, 0.16), rgba(8, 37, 29, 0.34)),
     var(--charcoal);
@@ -279,6 +279,7 @@ p {
   overflow: hidden;
   padding: 0;
   position: relative;
+  width: 100%;
 }
 
 .hero__media iframe {
@@ -479,7 +480,7 @@ p {
 }
 
 .stars::before {
-  content: "★★★★★";
+  content: "5.0 / 5.0";
   font-size: 1rem;
 }
 
@@ -553,6 +554,35 @@ p {
   color: var(--forest-deep);
 }
 
+.subpage-hero--media {
+  align-items: center;
+  display: grid;
+  gap: clamp(28px, 5vw, 72px);
+  grid-template-columns: minmax(0, 0.85fr) minmax(360px, 1.15fr);
+}
+
+.subpage-hero__content {
+  max-width: 760px;
+}
+
+.service-hero-video {
+  aspect-ratio: 16 / 10;
+  background: var(--charcoal);
+  border: 1px solid rgba(18, 63, 47, 0.18);
+  border-radius: 8px;
+  box-shadow: 0 26px 70px rgba(8, 37, 29, 0.16);
+  overflow: hidden;
+  position: relative;
+  width: 100%;
+}
+
+.service-hero-video iframe {
+  border: 0;
+  display: block;
+  height: 100%;
+  width: 100%;
+}
+
 .service-detail {
   display: grid;
   gap: 28px;
@@ -571,23 +601,86 @@ p {
   background: #f9faf7;
 }
 
-.photo-grid {
-  display: grid;
-  gap: 18px;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  margin-top: 34px;
-}
-
-.photo-card {
+.before-after-carousel {
   background: white;
   border: 1px solid var(--line);
   border-radius: 8px;
-  box-shadow: 0 18px 42px rgba(8, 37, 29, 0.08);
-  margin: 0;
+  box-shadow: 0 18px 48px rgba(8, 37, 29, 0.08);
+  margin-top: 34px;
   overflow: hidden;
+  padding: clamp(14px, 2vw, 22px);
 }
 
-.photo-card img {
+.carousel-toolbar {
+  align-items: center;
+  display: flex;
+  gap: 18px;
+  justify-content: space-between;
+  margin-bottom: 18px;
+}
+
+.carousel-toolbar h3 {
+  margin-bottom: 0;
+}
+
+.carousel-kicker {
+  color: var(--moss);
+  font-size: 0.78rem;
+  font-weight: 900;
+  line-height: 1.2;
+  margin-bottom: 6px;
+  text-transform: uppercase;
+}
+
+.carousel-controls {
+  display: flex;
+  gap: 8px;
+}
+
+.carousel-controls button {
+  background: var(--forest);
+  border: 1px solid var(--forest);
+  border-radius: 6px;
+  color: white;
+  cursor: pointer;
+  font-size: 0.86rem;
+  font-weight: 850;
+  min-height: 40px;
+  padding: 10px 14px;
+  transition:
+    background 180ms ease,
+    border-color 180ms ease,
+    box-shadow 180ms ease,
+    transform 180ms ease;
+}
+
+.carousel-controls button:hover {
+  background: var(--forest-deep);
+  transform: translateY(-1px);
+}
+
+.carousel-controls button:focus-visible {
+  outline: 3px solid rgba(79, 112, 93, 0.46);
+  outline-offset: 3px;
+}
+
+.before-after-slide {
+  display: grid;
+  gap: 16px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.comparison-card {
+  background: #edf1eb;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  margin: 0;
+  min-width: 0;
+  overflow: hidden;
+  position: relative;
+}
+
+.comparison-card img {
   aspect-ratio: 4 / 5;
   display: block;
   height: auto;
@@ -595,11 +688,22 @@ p {
   width: 100%;
 }
 
-.photo-card figcaption {
-  color: var(--forest-deep);
-  font-size: 0.92rem;
-  font-weight: 850;
-  padding: 14px 16px 16px;
+.comparison-label {
+  background: rgba(23, 27, 25, 0.86);
+  border-radius: 6px;
+  color: white;
+  font-size: 0.78rem;
+  font-weight: 900;
+  left: 14px;
+  padding: 8px 10px;
+  position: absolute;
+  text-transform: uppercase;
+  top: 14px;
+  z-index: 1;
+}
+
+.comparison-label--after {
+  background: rgba(18, 63, 47, 0.9);
 }
 
 .faq-list {
@@ -656,7 +760,8 @@ p {
 
   .hero,
   .section--split,
-  .service-detail {
+  .service-detail,
+  .subpage-hero--media {
     grid-template-columns: 1fr;
   }
 
@@ -666,7 +771,7 @@ p {
 
   .service-grid,
   .process-grid,
-  .photo-grid {
+  .before-after-slide {
     grid-template-columns: 1fr;
   }
 
@@ -715,7 +820,13 @@ p {
     width: 100%;
   }
 
-  .hero__media {
-    padding: 18px;
+  .carousel-toolbar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .carousel-controls,
+  .carousel-controls button {
+    width: 100%;
   }
 }

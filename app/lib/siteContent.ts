@@ -10,21 +10,33 @@ export const services = [
       "Garage, shed, basement, and storage cleanouts",
       "Debris removal after small projects or property turnover",
     ],
-    photos: [
+    heroVideo: {
+      src: "https://www.youtube.com/embed/MkAzInCC06c?autoplay=1&mute=1&playsinline=1&rel=0&vq=hd1080",
+      title: "Wade Home Services junk removal work video",
+      label: "Junk removal video",
+    },
+    beforeAfterPairs: [
       {
-        src: "/job-photos/junk-removal-load.jpg",
-        alt: "Loaded Wade Home Services junk removal trailer after a residential cleanout",
-        label: "Loaded and ready for haul-away",
+        title: "Driveway cleanout",
+        before: {
+          src: "/job-photos/driveway-before.jpg",
+          alt: "Driveway area with boxes and household items before Wade Home Services cleanout",
+        },
+        after: {
+          src: "/job-photos/driveway-after.jpg",
+          alt: "Same driveway area cleared after Wade Home Services cleanout",
+        },
       },
       {
-        src: "/job-photos/junk-removal-garage-clear.jpg",
-        alt: "Cleared residential garage after junk removal work",
-        label: "Garage cleared for the next use",
-      },
-      {
-        src: "/job-photos/junk-removal-exterior-clear.jpg",
-        alt: "Residential driveway area after exterior cleanout work",
-        label: "Exterior areas reset and usable",
+        title: "Garage reset",
+        before: {
+          src: "/job-photos/garage-before.jpg",
+          alt: "Garage area with shelves, boxes, and loose items before cleanout",
+        },
+        after: {
+          src: "/job-photos/garage-after.jpg",
+          alt: "Same garage area cleared after Wade Home Services cleanout",
+        },
       },
     ],
   },
@@ -39,6 +51,11 @@ export const services = [
       "Deck, shed, fixture, and non-structural demo planning",
       "Debris handling and property protection during the job",
     ],
+    heroVideo: {
+      src: "https://www.youtube.com/embed/1D-1jAJewoo?autoplay=1&mute=1&playsinline=1&rel=0&vq=hd1080",
+      title: "Wade Home Services demolition work video",
+      label: "Demolition work video",
+    },
   },
   {
     title: "Storage & Relocation",

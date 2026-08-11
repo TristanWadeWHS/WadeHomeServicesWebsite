@@ -1,10 +1,21 @@
-import Image from "next/image";
 import Link from "next/link";
+import { BeforeAfterCarousel } from "./BeforeAfterCarousel";
 import { SiteShell } from "./SiteShell";
 
-type ServicePhoto = {
+type BeforeAfterImage = {
   src: string;
   alt: string;
+};
+
+type BeforeAfterPair = {
+  title: string;
+  before: BeforeAfterImage;
+  after: BeforeAfterImage;
+};
+
+type HeroVideo = {
+  src: string;
+  title: string;
   label: string;
 };
 
@@ -13,25 +24,54 @@ type Service = {
   kicker: string;
   summary: string;
   details: string[];
-  photos?: ServicePhoto[];
+  heroVideo?: HeroVideo;
+  beforeAfterPairs?: BeforeAfterPair[];
 };
 
 export function ServicePage({ service }: { service: Service }) {
   return (
     <SiteShell>
-      <section className="subpage-hero section">
-        <p className="eyebrow">{service.kicker}</p>
-        <h1>{service.title}</h1>
-        <p>{service.summary}</p>
-        <div className="actions">
-          <a className="button button--primary" href="tel:+19494245605">
-            Call 949-424-5605
-          </a>
-          <Link className="button button--dark" href="/#booking">
-            Book Now
-          </Link>
+      <section
+        className={`subpage-hero section${service.heroVideo ? " subpage-hero--media" : ""}`}
+      >
+        <div className="subpage-hero__content">
+          <p className="eyebrow">{service.kicker}</p>
+          <h1>{service.title}</h1>
+          <p>{service.summary}</p>
+          <div className="actions">
+            <a className="button button--primary" href="tel:+19494245605">
+              Call 949-424-5605
+            </a>
+            <Link className="button button--dark" href="/#booking">
+              Book Now
+            </Link>
+          </div>
         </div>
+        {service.heroVideo ? (
+          <div className="service-hero-video" aria-label={service.heroVideo.label}>
+            <iframe
+              src={service.heroVideo.src}
+              title={service.heroVideo.title}
+              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+              allowFullScreen
+            />
+            <div className="hero__media-label">{service.heroVideo.label}</div>
+          </div>
+        ) : null}
       </section>
+      {service.beforeAfterPairs ? (
+        <section className="section project-photos" aria-labelledby="project-photos-title">
+          <div className="section-heading section-heading--wide">
+            <p className="eyebrow">Project Photos</p>
+            <h2 id="project-photos-title">Before and after cleanout work.</h2>
+            <p>
+              Verified pairs from the same Wade Home Services job sites, shown
+              as clear project progress instead of mixed, unrelated photos.
+            </p>
+          </div>
+          <BeforeAfterCarousel pairs={service.beforeAfterPairs} />
+        </section>
+      ) : null}
       <section className="section service-detail">
         <div>
           <p className="eyebrow">Scope</p>
@@ -43,32 +83,6 @@ export function ServicePage({ service }: { service: Service }) {
           ))}
         </ul>
       </section>
-      {service.photos ? (
-        <section className="section project-photos" aria-labelledby="project-photos-title">
-          <div className="section-heading section-heading--wide">
-            <p className="eyebrow">Project Photos</p>
-            <h2 id="project-photos-title">Real Wade Home Services cleanout work.</h2>
-            <p>
-              Selected from the Wade Home Services shared job album and cropped
-              for a clean, professional service-page presentation.
-            </p>
-          </div>
-          <div className="photo-grid">
-            {service.photos.map((photo) => (
-              <figure className="photo-card" key={photo.src}>
-                <Image
-                  src={photo.src}
-                  alt={photo.alt}
-                  width={900}
-                  height={1200}
-                  sizes="(max-width: 760px) 100vw, 33vw"
-                />
-                <figcaption>{photo.label}</figcaption>
-              </figure>
-            ))}
-          </div>
-        </section>
-      ) : null}
       <section className="section final-cta">
         <h2>Need this service?</h2>
         <p>
