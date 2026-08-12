@@ -47,7 +47,9 @@ export async function getCalendarBusyWindows(
   });
 
   if (!response.ok) {
-    throw new Error(`Calendar free/busy failed with ${response.status}`);
+    throw new Error(
+      `Calendar free/busy failed with ${response.status}: ${await response.text()}`,
+    );
   }
 
   const payload = (await response.json()) as {
@@ -84,7 +86,9 @@ export async function appendLeadToSheet(leadId: string, lead: NormalizedLead) {
   );
 
   if (!response.ok) {
-    throw new Error(`Google Sheets append failed with ${response.status}`);
+    throw new Error(
+      `Google Sheets append failed with ${response.status}: ${await response.text()}`,
+    );
   }
 }
 
@@ -100,7 +104,9 @@ async function getSheetHeaders(
     { headers: { Authorization: `Bearer ${token}` } },
   );
   if (!response.ok) {
-    throw new Error(`Google Sheets header read failed with ${response.status}`);
+    throw new Error(
+      `Google Sheets header read failed with ${response.status}: ${await response.text()}`,
+    );
   }
   const payload = (await response.json()) as { values?: string[][] };
   return payload.values?.[0] ?? [];
@@ -132,7 +138,9 @@ async function ensureSheetHeaders(
     },
   );
   if (!response.ok) {
-    throw new Error(`Google Sheets header update failed with ${response.status}`);
+    throw new Error(
+      `Google Sheets header update failed with ${response.status}: ${await response.text()}`,
+    );
   }
   return headers;
 }
