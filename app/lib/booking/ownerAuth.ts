@@ -1,6 +1,7 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 
 export const OWNER_SESSION_COOKIE = "whs_owner_session";
+export const OWNER_SESSION_ACTIVE_COOKIE = "whs_owner_session_active";
 const OWNER_SESSION_VERSION = "v1";
 const OWNER_SESSION_MAX_AGE_SECONDS = 8 * 60 * 60;
 const revokedSessions = new Map<string, number>();
@@ -11,7 +12,13 @@ export function ownerApprovalConfigured() {
 
 export function isOwnerAuthorized(request: Request) {
   const session = extractOwnerSession(request);
-  return isValidOwnerSession(session);
+  return hasActiveOwnerSessionMarker(request) && isValidOwnerSession(session);
+}
+
+export function isSameOriginRequest(request: Request) {
+  const origin = request.headers.get("origin");
+  if (!origin) return true;
+  return origin === new URL(request.url).origin;
 }
 
 export function isValidOwnerToken(token: string | null | undefined) {
@@ -62,11 +69,19 @@ export function ownerSessionCookieOptions() {
   };
 }
 
+export function ownerSessionActiveCookieOptions() {
+  return ownerSessionCookieOptions();
+}
+
 export function clearedOwnerSessionCookieOptions() {
   return {
     ...ownerSessionCookieOptions(),
     maxAge: 0,
   };
+}
+
+export function clearedOwnerSessionActiveCookieOptions() {
+  return clearedOwnerSessionCookieOptions();
 }
 
 export function revokeOwnerSession(session: string | null | undefined, now = Date.now()) {
@@ -79,13 +94,19 @@ export function getOwnerSessionFromRequest(request: Request) {
 }
 
 function extractOwnerSession(request: Request) {
+  return extractCookie(request, OWNER_SESSION_COOKIE);
+}
+
+function hasActiveOwnerSessionMarker(request: Request) {
+  return extractCookie(request, OWNER_SESSION_ACTIVE_COOKIE) === "1";
+}
+
+function extractCookie(request: Request, name: string) {
   const cookieHeader = request.headers.get("cookie") ?? "";
   const cookies = cookieHeader.split(";").map((cookie) => cookie.trim());
-  const sessionCookie = cookies.find((cookie) =>
-    cookie.startsWith(`${OWNER_SESSION_COOKIE}=`),
-  );
+  const sessionCookie = cookies.find((cookie) => cookie.startsWith(`${name}=`));
   return sessionCookie
-    ? decodeURIComponent(sessionCookie.slice(OWNER_SESSION_COOKIE.length + 1))
+    ? decodeURIComponent(sessionCookie.slice(name.length + 1))
     : null;
 }
 

@@ -1,7 +1,10 @@
 import {
   createOwnerSession,
+  OWNER_SESSION_ACTIVE_COOKIE,
+  isSameOriginRequest,
   isValidOwnerToken,
   OWNER_SESSION_COOKIE,
+  ownerSessionActiveCookieOptions,
   ownerSessionCookieOptions,
 } from "@/app/lib/booking/ownerAuth";
 import { clientIp, rateLimit } from "@/app/lib/booking/security";
@@ -13,6 +16,7 @@ export async function POST(request: Request) {
   const ip = clientIp(request);
   const limit = rateLimit(`owner-login:${ip}`, 10, 10 * 60 * 1000);
   if (!limit.ok) return redirectToApprovals(request);
+  if (!isSameOriginRequest(request)) return redirectToApprovals(request);
 
   const form = await request.formData();
   const token = String(form.get("token") ?? "");
@@ -23,6 +27,11 @@ export async function POST(request: Request) {
     OWNER_SESSION_COOKIE,
     createOwnerSession(),
     ownerSessionCookieOptions(),
+  );
+  response.cookies.set(
+    OWNER_SESSION_ACTIVE_COOKIE,
+    "1",
+    ownerSessionActiveCookieOptions(),
   );
   return response;
 }

@@ -16,8 +16,10 @@ import {
   clearedOwnerSessionCookieOptions,
   createOwnerSession,
   isOwnerAuthorized,
+  isSameOriginRequest,
   isValidOwnerSession,
   isValidOwnerToken,
+  OWNER_SESSION_ACTIVE_COOKIE,
   OWNER_SESSION_COOKIE,
   ownerSessionCookieOptions,
   revokeOwnerSession,
@@ -176,17 +178,52 @@ test("owner signed session accepts valid cookie and rejects invalid sessions", (
 
   const currentSession = createOwnerSession();
   const request = new Request("https://example.com/api/owner/booking/approve", {
-    headers: { cookie: `${OWNER_SESSION_COOKIE}=${encodeURIComponent(currentSession)}` },
+    headers: {
+      cookie: [
+        `${OWNER_SESSION_COOKIE}=${encodeURIComponent(currentSession)}`,
+        `${OWNER_SESSION_ACTIVE_COOKIE}=1`,
+      ].join("; "),
+    },
   });
   assert.equal(isOwnerAuthorized(request), true);
 
   const badRequest = new Request("https://example.com/api/owner/booking/approve", {
-    headers: { cookie: `${OWNER_SESSION_COOKIE}=bad-session` },
+    headers: {
+      cookie: `${OWNER_SESSION_COOKIE}=bad-session; ${OWNER_SESSION_ACTIVE_COOKIE}=1`,
+    },
   });
   assert.equal(isOwnerAuthorized(badRequest), false);
 
+  const loggedOutRequest = new Request("https://example.com/api/owner/booking/approve", {
+    headers: { cookie: `${OWNER_SESSION_COOKIE}=${encodeURIComponent(currentSession)}` },
+  });
+  assert.equal(isOwnerAuthorized(loggedOutRequest), false);
+
   if (previous === undefined) delete process.env.OWNER_APPROVAL_TOKEN;
   else process.env.OWNER_APPROVAL_TOKEN = previous;
+});
+
+test("owner mutation origin guard rejects cross-site browser posts", () => {
+  assert.equal(
+    isSameOriginRequest(
+      new Request("https://wade.example/api/owner/booking/approve", {
+        headers: { origin: "https://wade.example" },
+      }),
+    ),
+    true,
+  );
+  assert.equal(
+    isSameOriginRequest(
+      new Request("https://wade.example/api/owner/booking/approve", {
+        headers: { origin: "https://evil.example" },
+      }),
+    ),
+    false,
+  );
+  assert.equal(
+    isSameOriginRequest(new Request("https://wade.example/api/owner/booking/approve")),
+    true,
+  );
 });
 
 test("owner session cookie is HttpOnly, Secure, strict, and logout clears it", () => {

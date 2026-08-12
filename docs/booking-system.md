@@ -164,23 +164,28 @@ Phase 2 records requested times as pending requests only:
 ## Phase 3 Owner Approval
 
 Owner review is available at `/owner/approvals` when `OWNER_APPROVAL_TOKEN` is
-configured. The token is checked server-side before pending leads are displayed
-or decisions are accepted.
+configured. The owner submits that token by POST to the server, and the raw
+token is never placed in URLs, hidden fields, client-side JavaScript, or the
+rendered owner page. Successful login creates signed owner session cookies with
+`HttpOnly`, `Secure`, and `SameSite=Strict` attributes. Logout clears the active
+session marker and revokes the current session in-process. Owner mutations
+require the valid session cookies and reject cross-site browser posts with a
+mismatched `Origin` header.
 
 Approve flow:
 
-1. validate owner token
+1. validate owner session
 2. load the lead by `Unique ID`
 3. require `Status = Pending Approval`
 4. re-check Google Calendar free/busy for the requested time
 5. look for an existing Calendar event with the lead id
-6. create a Calendar event only if none exists
+6. create a busy/opaque Calendar event only if none exists
 7. update the Sheet with `Status = Approved`, decision timestamp, Calendar
    Event ID, confirmed date, and confirmed time
 
 Decline flow:
 
-1. validate owner token
+1. validate owner session
 2. load the lead by `Unique ID`
 3. require `Status = Pending Approval`
 4. update the Sheet with `Status = Declined`, decision timestamp, and decline
