@@ -167,6 +167,18 @@ test("owner page markup cannot serialize raw token in links or hidden form field
   assert.equal(source.includes('name="token" type="hidden"'), false);
 });
 
+test("owner approval actions are handled by the client instead of raw API form navigation", () => {
+  const pageSource = readFileSync("app/owner/approvals/page.tsx", "utf8");
+  const clientSource = readFileSync("app/owner/approvals/OwnerApprovalsClient.tsx", "utf8");
+
+  assert.equal(pageSource.includes('action="/api/owner/booking/approve"'), false);
+  assert.equal(pageSource.includes('action="/api/owner/booking/decline"'), false);
+  assert.equal(clientSource.includes("fetch(`/api/owner/booking/${action}`"), true);
+  assert.equal(clientSource.includes('credentials: "same-origin"'), true);
+  assert.equal(clientSource.includes("Appointment approved and added to Google Calendar."), true);
+  assert.equal(clientSource.includes("This requested time is no longer available."), true);
+});
+
 test("owner signed session accepts valid cookie and rejects invalid sessions", () => {
   const previous = process.env.OWNER_APPROVAL_TOKEN;
   process.env.OWNER_APPROVAL_TOKEN = "owner-secret";

@@ -1120,6 +1120,32 @@ p {
   gap: 18px;
 }
 
+.owner-notice {
+  border-radius: 8px;
+  font-weight: 800;
+  padding: 14px 16px;
+}
+
+.owner-notice--success {
+  background: rgba(40, 104, 78, 0.1);
+  border: 1px solid rgba(40, 104, 78, 0.28);
+  color: var(--forest-dark);
+}
+
+.owner-notice--error,
+.owner-inline-error {
+  background: rgba(139, 46, 46, 0.08);
+  border: 1px solid rgba(139, 46, 46, 0.24);
+  color: #7a2424;
+}
+
+.owner-inline-error {
+  border-radius: 8px;
+  font-weight: 800;
+  margin: 14px 0 0;
+  padding: 12px 14px;
+}
+
 .owner-lead__header,
 .owner-actions {
   align-items: flex-start;
@@ -1157,10 +1183,49 @@ p {
   margin: 5px 0 0;
 }
 
+.owner-status-detail {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 18px;
+  margin: 14px 0 0;
+}
+
+.owner-status-detail div {
+  background: rgba(246, 245, 240, 0.92);
+  border: 1px solid rgba(31, 46, 39, 0.1);
+  border-radius: 8px;
+  padding: 10px 12px;
+}
+
+.owner-status-detail dt {
+  color: var(--forest);
+  font-size: 0.7rem;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.owner-status-detail dd {
+  font-weight: 800;
+  margin: 4px 0 0;
+}
+
 .owner-actions form {
   display: grid;
   gap: 10px;
   min-width: min(100%, 260px);
+}
+
+.owner-decline-control {
+  display: grid;
+  gap: 10px;
+  min-width: min(100%, 280px);
+}
+
+.owner-actions button:disabled,
+.owner-decline-control select:disabled {
+  cursor: not-allowed;
+  opacity: 0.62;
 }
 
 .site-footer {
