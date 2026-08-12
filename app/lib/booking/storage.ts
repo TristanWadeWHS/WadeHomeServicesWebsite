@@ -14,7 +14,7 @@ export async function storePhoto(file: File): Promise<StoredPhoto> {
   const validationError = validatePhotoFile(file);
   if (validationError) throw new Error(validationError);
 
-  const mode = process.env.PHOTO_STORAGE_MODE || "disabled";
+  const mode = resolvePhotoStorageMode();
   if (mode === "mock") {
     const bytes = Buffer.from(await file.arrayBuffer());
     const digest = createHash("sha256").update(bytes).digest("hex").slice(0, 16);
@@ -34,6 +34,7 @@ export async function storePhoto(file: File): Promise<StoredPhoto> {
       access: "private",
       addRandomSuffix: false,
       contentType: file.type,
+      storeId: process.env.BLOB_STORE_ID,
     });
 
     return {
@@ -46,8 +47,19 @@ export async function storePhoto(file: File): Promise<StoredPhoto> {
   }
 
   throw new Error(
-    "Photo storage is not configured. Set PHOTO_STORAGE_MODE=vercel-blob and BLOB_READ_WRITE_TOKEN.",
+    "Photo storage is not configured. Connect a private Vercel Blob store with OIDC, or set PHOTO_STORAGE_MODE=vercel-blob with Blob credentials.",
   );
+}
+
+function resolvePhotoStorageMode() {
+  const configuredMode = process.env.PHOTO_STORAGE_MODE;
+  if (configuredMode) return configuredMode;
+
+  if (process.env.BLOB_STORE_ID || process.env.BLOB_READ_WRITE_TOKEN) {
+    return "vercel-blob";
+  }
+
+  return "disabled";
 }
 
 function sanitizeFileName(value: string) {

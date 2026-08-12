@@ -102,16 +102,24 @@ traffic is expected, because in-memory protection resets per server instance.
 
 ## Photo Storage
 
-The current storage adapter intentionally defaults to `PHOTO_STORAGE_MODE=disabled`.
+The storage adapter keeps uploads private and only uses durable storage when a
+private Vercel Blob store is connected or a storage mode is explicitly set.
 
 `PHOTO_STORAGE_MODE=mock` is available for local/preview testing only. It
 validates image files and returns non-public mock references. It is not durable
 customer-photo storage.
 
-For Vercel Blob uploads, configure:
+Recommended Vercel Blob setup:
 
-- `PHOTO_STORAGE_MODE=vercel-blob`
-- `BLOB_READ_WRITE_TOKEN`
+- Create or connect a private Vercel Blob store to the Vercel project.
+- Use the current OIDC project connection when available. The SDK authenticates
+  from Vercel Functions without a long-lived `BLOB_READ_WRITE_TOKEN`.
+- Ensure the project has `BLOB_STORE_ID`. When that is present, the adapter
+  auto-enables Vercel Blob unless `PHOTO_STORAGE_MODE=disabled` is explicitly
+  set.
+- Optional: set `PHOTO_STORAGE_MODE=vercel-blob` to force Blob uploads.
+- Legacy fallback only: `BLOB_READ_WRITE_TOKEN` still works if the store has not
+  been upgraded to OIDC.
 
 Uploaded photos are stored as private blobs under a dated `booking-photos/`
 prefix and the Sheet receives the Blob pathname/reference. The browser does not
