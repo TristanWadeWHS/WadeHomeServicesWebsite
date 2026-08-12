@@ -14,6 +14,7 @@ type GoogleCredentials = {
 };
 
 let cachedToken: GoogleToken | null = null;
+const cachedTokens = new Map<string, GoogleToken>();
 
 const GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token";
 const SHEETS_SCOPE = "https://www.googleapis.com/auth/spreadsheets";
@@ -146,7 +147,16 @@ async function ensureSheetHeaders(
 }
 
 async function getGoogleAccessToken(scopes: string[]) {
-  if (cachedToken && cachedToken.expiresAt > Date.now() + 60_000) {
+  const cacheKey = [...scopes].sort().join(" ");
+  const scopedToken = cachedTokens.get(cacheKey);
+  if (scopedToken && scopedToken.expiresAt > Date.now() + 60_000) {
+    return scopedToken.accessToken;
+  }
+  if (
+    cachedToken &&
+    cacheKey === CALENDAR_SCOPE &&
+    cachedToken.expiresAt > Date.now() + 60_000
+  ) {
     return cachedToken.accessToken;
   }
 
@@ -175,11 +185,13 @@ async function getGoogleAccessToken(scopes: string[]) {
     access_token: string;
     expires_in: number;
   };
-  cachedToken = {
+  const token = {
     accessToken: payload.access_token,
     expiresAt: Date.now() + payload.expires_in * 1000,
   };
-  return cachedToken.accessToken;
+  cachedTokens.set(cacheKey, token);
+  if (cacheKey === CALENDAR_SCOPE) cachedToken = token;
+  return token.accessToken;
 }
 
 async function signJwt(payload: object) {
