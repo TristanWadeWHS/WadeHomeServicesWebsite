@@ -78,7 +78,7 @@ export const faqs = [
   {
     question: "Can I book online right now?",
     answer:
-      "This first draft uses a Book Now email link as a placeholder until Wade Home Services confirms the preferred booking form, phone number, or scheduling tool.",
+      "Book Now opens the website request flow. Requested times are not confirmed until Wade Home Services reviews the project details and follows up.",
   },
   {
     question: "Does the site show pricing?",

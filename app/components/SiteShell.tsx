@@ -41,7 +41,7 @@ export function SiteShell({ children }: { children: ReactNode }) {
           <a className="button button--ghost" href="tel:+19494245605">
             Call 949-424-5605
           </a>
-          <Link className="button button--primary" href="/#booking">
+          <Link className="button button--primary" href="/book">
             Book Now
           </Link>
         </div>

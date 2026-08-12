@@ -62,7 +62,7 @@ export default function Home() {
             <a className="button button--on-green" href="tel:+19494245605">
               Call Wade Home Services
             </a>
-            <a className="button button--light" href="#booking">
+            <a className="button button--light" href="/book">
               Book Now
             </a>
           </div>
@@ -171,7 +171,7 @@ export default function Home() {
             is ready and approved.
           </p>
         </div>
-        <a className="button button--primary" href="#booking">
+        <a className="button button--primary" href="/book">
           Request a Human Estimate
         </a>
       </section>
@@ -186,7 +186,7 @@ export default function Home() {
           <a className="button button--primary" href="tel:+19494245605">
             Call 949-424-5605
           </a>
-          <a className="button button--dark" href="#booking">
+          <a className="button button--dark" href="/book">
             Book Now
           </a>
         </div>

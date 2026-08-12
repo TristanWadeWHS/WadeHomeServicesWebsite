@@ -172,7 +172,11 @@ a {
 .site-nav a:focus-visible,
 .brand:focus-visible,
 .footer-links a:focus-visible,
-.service-card:focus-visible {
+.service-card:focus-visible,
+.choice-card:focus-visible,
+.slot-button:focus-visible,
+.carousel-controls button:focus-visible,
+.photo-preview button:focus-visible {
   outline: 3px solid rgba(79, 112, 93, 0.46);
   outline-offset: 4px;
 }
@@ -613,6 +617,308 @@ p {
   max-width: 680px;
 }
 
+.booking-shell {
+  background:
+    linear-gradient(180deg, #f9faf7, #edf1eb);
+}
+
+.booking-card,
+.booking-success {
+  background: white;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  box-shadow: 0 18px 52px rgba(8, 37, 29, 0.08);
+  margin: 0 auto;
+  max-width: 920px;
+  padding: clamp(22px, 4vw, 42px);
+}
+
+.booking-progress {
+  display: grid;
+  gap: 10px;
+  margin-bottom: 34px;
+}
+
+.booking-progress span {
+  color: var(--moss);
+  font-size: 0.82rem;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.booking-progress__track {
+  background: rgba(18, 63, 47, 0.1);
+  border-radius: 999px;
+  height: 8px;
+  overflow: hidden;
+}
+
+.booking-progress__track div {
+  background: var(--forest);
+  height: 100%;
+  transition: width 220ms ease;
+}
+
+.booking-step h2 {
+  color: var(--forest-deep);
+  font-size: clamp(1.8rem, 4vw, 3.2rem);
+  margin-bottom: 12px;
+}
+
+.choice-grid,
+.field-grid,
+.slot-grid,
+.photo-preview-grid,
+.review-summary {
+  display: grid;
+  gap: 12px;
+}
+
+.choice-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin-top: 24px;
+}
+
+.choice-grid--two {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.choice-card,
+.slot-button {
+  background: #f9faf7;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--forest-deep);
+  cursor: pointer;
+  display: grid;
+  gap: 10px;
+  min-height: 118px;
+  padding: 20px;
+  text-align: left;
+  transition:
+    background 180ms ease,
+    border-color 180ms ease,
+    box-shadow 180ms ease,
+    transform 180ms ease;
+}
+
+.choice-card span {
+  align-items: center;
+  background: rgba(18, 63, 47, 0.08);
+  border-radius: 999px;
+  color: var(--forest);
+  display: inline-flex;
+  font-size: 0.78rem;
+  font-weight: 900;
+  height: 42px;
+  justify-content: center;
+  width: 42px;
+}
+
+.choice-card strong,
+.slot-button {
+  font-weight: 900;
+}
+
+.choice-card small {
+  color: var(--muted);
+  font-size: 0.92rem;
+  line-height: 1.5;
+}
+
+.choice-card--selected,
+.slot-button--selected {
+  background: rgba(18, 63, 47, 0.08);
+  border-color: var(--forest);
+  box-shadow: 0 16px 36px rgba(8, 37, 29, 0.12);
+}
+
+.choice-card:hover,
+.slot-button:hover {
+  transform: translateY(-1px);
+}
+
+.field-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin-top: 24px;
+}
+
+.field {
+  display: grid;
+  gap: 8px;
+}
+
+.field--wide {
+  grid-column: 1 / -1;
+}
+
+.field span {
+  color: var(--forest-deep);
+  font-size: 0.88rem;
+  font-weight: 900;
+}
+
+.field input,
+.field textarea {
+  background: #f9faf7;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  color: var(--ink);
+  font: inherit;
+  min-height: 48px;
+  padding: 12px 14px;
+  width: 100%;
+}
+
+.field textarea {
+  min-height: 132px;
+  resize: vertical;
+}
+
+.field input:focus,
+.field textarea:focus {
+  border-color: var(--forest);
+  outline: 3px solid rgba(79, 112, 93, 0.22);
+}
+
+.photo-drop {
+  align-items: center;
+  background: #f9faf7;
+  border: 1px dashed rgba(18, 63, 47, 0.34);
+  border-radius: 8px;
+  cursor: pointer;
+  display: grid;
+  gap: 6px;
+  margin-top: 24px;
+  min-height: 150px;
+  padding: 24px;
+  place-items: center;
+  text-align: center;
+}
+
+.photo-drop input {
+  max-width: 260px;
+}
+
+.photo-drop span {
+  color: var(--forest-deep);
+  font-weight: 900;
+}
+
+.photo-drop small,
+.field-error {
+  color: var(--muted);
+}
+
+.photo-preview-grid {
+  margin-top: 16px;
+}
+
+.photo-preview {
+  align-items: center;
+  background: rgba(18, 63, 47, 0.06);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+  padding: 12px 14px;
+}
+
+.photo-preview img {
+  border-radius: 5px;
+  height: 54px;
+  object-fit: cover;
+  width: 54px;
+}
+
+.photo-preview span {
+  color: var(--forest-deep);
+  font-weight: 800;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.photo-preview button {
+  background: transparent;
+  border: 0;
+  color: var(--forest);
+  cursor: pointer;
+  font-weight: 900;
+}
+
+.slot-groups {
+  display: grid;
+  gap: 20px;
+  margin-top: 22px;
+}
+
+.slot-group h3 {
+  color: var(--forest-deep);
+}
+
+.slot-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.slot-button {
+  min-height: 52px;
+  padding: 12px 14px;
+}
+
+.review-summary {
+  margin-top: 24px;
+}
+
+.review-summary div {
+  border-bottom: 1px solid var(--line);
+  display: grid;
+  gap: 4px;
+  padding: 12px 0;
+}
+
+.review-summary span {
+  color: var(--muted);
+  font-size: 0.86rem;
+  font-weight: 800;
+}
+
+.review-summary strong,
+.booking-reference {
+  color: var(--forest-deep);
+}
+
+.field-error {
+  color: #8b1e1e;
+  font-size: 0.92rem;
+  font-weight: 800;
+  margin: 10px 0 0;
+}
+
+.booking-actions {
+  border-top: 1px solid var(--line);
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+  margin-top: 34px;
+  padding-top: 22px;
+}
+
+.booking-actions button:disabled {
+  cursor: not-allowed;
+  opacity: 0.48;
+}
+
+.hidden-field {
+  height: 1px;
+  left: -10000px;
+  overflow: hidden;
+  position: absolute;
+  top: auto;
+  width: 1px;
+}
+
 .subpage-hero {
   background:
     linear-gradient(120deg, rgba(244, 245, 242, 0.96), rgba(216, 221, 215, 0.72)),
@@ -851,6 +1157,10 @@ p {
   .service-grid,
   .process-grid,
   .team-banner-grid,
+  .choice-grid,
+  .choice-grid--two,
+  .field-grid,
+  .slot-grid,
   .before-after-slide {
     grid-template-columns: 1fr;
   }
@@ -906,7 +1216,13 @@ p {
   }
 
   .carousel-controls,
-  .carousel-controls button {
+  .carousel-controls button,
+  .booking-actions,
+  .booking-actions .button {
     width: 100%;
+  }
+
+  .booking-actions {
+    flex-direction: column;
   }
 }

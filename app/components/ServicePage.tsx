@@ -42,7 +42,7 @@ export function ServicePage({ service }: { service: Service }) {
             <a className="button button--primary" href="tel:+19494245605">
               Call 949-424-5605
             </a>
-            <Link className="button button--dark" href="/#booking">
+            <Link className="button button--dark" href="/book">
               Book Now
             </Link>
           </div>
