@@ -75,7 +75,6 @@ export function validateSubmission(input: unknown): ValidationResult<NormalizedL
   }
 
   const photos = Array.isArray(data.photos) ? data.photos : [];
-  if (photos.length < 1) errors.photos = "At least one project photo is required.";
   if (photos.length > MAX_PHOTO_COUNT) {
     errors.photos = `Upload no more than ${MAX_PHOTO_COUNT} photos.`;
   }

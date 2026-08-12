@@ -64,7 +64,7 @@ test("validates required booking fields and normalizes contact data", () => {
   assert.deepEqual(result.value.services, ["Junk Removal", "Light Demolition"]);
 });
 
-test("rejects invalid service, contact, address, timing, honeypot, and missing photos", () => {
+test("rejects invalid service, contact, address, timing, and honeypot while allowing zero photos", () => {
   const result = validateSubmission(
     validSubmission({
       services: ["Bad Service"],
@@ -77,10 +77,13 @@ test("rejects invalid service, contact, address, timing, honeypot, and missing p
   );
   assert.equal(result.ok, false);
   assert.match(result.errors.services, /invalid|Select/i);
-  assert.match(result.errors.photos, /photo/i);
   assert.match(result.errors.email, /email/i);
   assert.match(result.errors.phone, /phone/i);
   assert.match(result.errors.honeypot, /accepted/i);
+
+  const withoutPhotos = validateSubmission(validSubmission({ photos: [] }));
+  assert.equal(withoutPhotos.ok, true);
+  assert.equal(withoutPhotos.value.photos.length, 0);
 });
 
 test("generates non-sequential Wade Home Services lead IDs", () => {

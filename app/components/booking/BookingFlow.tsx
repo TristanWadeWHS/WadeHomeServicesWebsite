@@ -332,7 +332,7 @@ export function BookingFlow() {
         {step === 4 ? (
           <StepBlock
             title="Add project photos."
-            subtitle="Photos help us understand the scope of your project and prepare a more accurate estimate."
+            subtitle="Photos are optional for now, but they help us understand the scope and prepare a more accurate estimate."
           >
             <label className="photo-drop">
               <input
@@ -342,7 +342,7 @@ export function BookingFlow() {
                 onChange={(event) => uploadPhotos(event.target.files)}
               />
               <span>{loading ? "Uploading..." : "Choose or drag photos"}</span>
-              <small>Minimum 1, maximum 15 photos.</small>
+              <small>Optional, maximum 15 photos.</small>
             </label>
             <div className="photo-preview-grid">
               {form.photos.map((photo) => (
@@ -547,9 +547,6 @@ function validateStep(step: number, form: FormState) {
   }
   if (step === 3 && form.projectDescription.trim().length < 8) {
     errors.projectDescription = "Tell us a little about the project.";
-  }
-  if (step === 4 && form.photos.length < 1) {
-    errors.photos = "At least one project photo is required.";
   }
   if (step === 5) {
     if (!form.name.trim()) errors.name = "Name is required.";
