@@ -1,16 +1,15 @@
-import Link from "next/link";
+import { cookies } from "next/headers";
 import { SiteShell } from "../../components/SiteShell";
 import { getPendingLeads } from "../../lib/booking/google";
-import { isValidOwnerToken, ownerApprovalConfigured } from "../../lib/booking/ownerAuth";
+import {
+  isValidOwnerSession,
+  OWNER_SESSION_COOKIE,
+  ownerApprovalConfigured,
+} from "../../lib/booking/ownerAuth";
 
-type PageProps = {
-  searchParams?: Promise<{ token?: string }> | { token?: string };
-};
-
-export default async function OwnerApprovalsPage({ searchParams }: PageProps) {
-  const params = await searchParams;
-  const token = params?.token ?? "";
-  const authorized = isValidOwnerToken(token);
+export default async function OwnerApprovalsPage() {
+  const cookieStore = await cookies();
+  const authorized = isValidOwnerSession(cookieStore.get(OWNER_SESSION_COOKIE)?.value);
   const configured = ownerApprovalConfigured();
   const leads = authorized ? await getPendingLeads() : [];
 
@@ -31,7 +30,7 @@ export default async function OwnerApprovalsPage({ searchParams }: PageProps) {
         ) : null}
 
         {configured && !authorized ? (
-          <form className="owner-auth" method="get">
+          <form className="owner-auth" action="/api/owner/session/login" method="post">
             <label className="field">
               <span>Owner access token</span>
               <input name="token" type="password" />
@@ -59,9 +58,12 @@ export default async function OwnerApprovalsPage({ searchParams }: PageProps) {
                     <h2>{lead.name}</h2>
                     <p>{lead.leadId}</p>
                   </div>
-                  <Link className="button button--ghost" href={`/owner/approvals?token=${encodeURIComponent(token)}`}>
-                    Refresh
-                  </Link>
+                  <div className="owner-actions owner-actions--compact">
+                    <a className="button button--ghost" href="/owner/approvals">Refresh</a>
+                    <form action="/api/owner/session/logout" method="post">
+                      <button className="button button--dark" type="submit">Log Out</button>
+                    </form>
+                  </div>
                 </div>
 
                 <dl className="owner-detail-grid">
@@ -77,7 +79,6 @@ export default async function OwnerApprovalsPage({ searchParams }: PageProps) {
 
                 <div className="owner-actions">
                   <form action="/api/owner/booking/approve" method="post">
-                    <input name="token" type="hidden" value={token} />
                     <input name="leadId" type="hidden" value={lead.leadId} />
                     <button className="button button--primary" type="submit">
                       Approve
@@ -85,7 +86,6 @@ export default async function OwnerApprovalsPage({ searchParams }: PageProps) {
                   </form>
 
                   <form action="/api/owner/booking/decline" method="post">
-                    <input name="token" type="hidden" value={token} />
                     <input name="leadId" type="hidden" value={lead.leadId} />
                     <label className="field">
                       <span>Decline reason</span>

@@ -207,6 +207,90 @@ export async function declineLead(
   };
 }
 
+export async function getCalendarEventForVerification(eventId: string) {
+  const calendarId = requireEnv("GOOGLE_CALENDAR_ID");
+  const token = await getGoogleAccessToken([CALENDAR_EVENTS_SCOPE]);
+  const response = await fetch(
+    `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(
+      calendarId,
+    )}/events/${encodeURIComponent(eventId)}`,
+    { headers: { Authorization: `Bearer ${token}` } },
+  );
+  if (!response.ok) {
+    throw new Error(
+      `Google Calendar event read failed with ${response.status}: ${await response.text()}`,
+    );
+  }
+  const event = (await response.json()) as {
+    id?: string;
+    summary?: string;
+    start?: { dateTime?: string; date?: string; timeZone?: string };
+    end?: { dateTime?: string; date?: string; timeZone?: string };
+    status?: string;
+    transparency?: string;
+    description?: string;
+  };
+  const description = event.description ?? "";
+  return {
+    id: event.id ?? "",
+    calendarId,
+    summary: event.summary ?? "",
+    start: event.start ?? {},
+    end: event.end ?? {},
+    status: event.status ?? "",
+    transparency: event.transparency || "opaque",
+    descriptionChecks: {
+      hasLeadId: description.includes("Lead ID:"),
+      hasCustomerName: description.includes("Customer Name:"),
+      hasPhone: description.includes("Phone Number:"),
+      hasEmail: description.includes("Email:"),
+      hasAddress: description.includes("Service Address:"),
+      hasServices: description.includes("Service Type(s):"),
+      hasAppointmentType: description.includes("Appointment Type:"),
+      hasProjectDescription: description.includes("Project Description:"),
+    },
+  };
+}
+
+export async function getCalendarEventCountForLead(
+  leadId: string,
+  timeMin: string,
+  timeMax: string,
+) {
+  const calendarId = requireEnv("GOOGLE_CALENDAR_ID");
+  const token = await getGoogleAccessToken([CALENDAR_EVENTS_SCOPE]);
+  const response = await fetch(
+    `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(
+      calendarId,
+    )}/events?${new URLSearchParams({
+      privateExtendedProperty: `leadId=${leadId}`,
+      singleEvents: "true",
+      timeMin,
+      timeMax,
+    })}`,
+    { headers: { Authorization: `Bearer ${token}` } },
+  );
+  if (!response.ok) {
+    throw new Error(
+      `Google Calendar event count failed with ${response.status}: ${await response.text()}`,
+    );
+  }
+  const payload = (await response.json()) as { items?: Array<{ id?: string }> };
+  return {
+    calendarId,
+    count: payload.items?.length ?? 0,
+    eventIds: (payload.items ?? []).map((event) => event.id ?? "").filter(Boolean),
+  };
+}
+
+export async function verifyCalendarBusyWindow(timeMin: string, timeMax: string) {
+  const busy = await getCalendarBusyWindows(timeMin, timeMax);
+  return {
+    busy,
+    reportsBusy: !isSlotStillAvailable(timeMin, timeMax, busy),
+  };
+}
+
 async function getSheetHeaders(
   spreadsheetId: string,
   sheetName: string,
@@ -366,13 +450,7 @@ async function createCalendarEventForLead(
         Authorization: `Bearer ${token}`,
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({
-        summary: `WHS - ${lead.services || "Service"} - ${lead.name}`,
-        description: calendarDescription(lead),
-        start: { dateTime: slot.start },
-        end: { dateTime: slot.end },
-        extendedProperties: { private: { leadId: lead.leadId } },
-      }),
+      body: JSON.stringify(buildCalendarEventResource(lead, slot)),
     },
   );
   if (!response.ok) {
@@ -383,6 +461,27 @@ async function createCalendarEventForLead(
   const payload = (await response.json()) as { id?: string };
   if (!payload.id) throw new Error("Google Calendar event creation returned no event id.");
   return payload.id;
+}
+
+export function buildCalendarEventResource(
+  lead: SheetLead,
+  slot: { start: string; end: string },
+) {
+  const timezone = process.env.BOOKING_TIMEZONE || "America/Los_Angeles";
+  return {
+    summary: `WHS - ${lead.services || "Service"} - ${lead.name}`,
+    description: calendarDescription(lead),
+    start: {
+      dateTime: slot.start,
+      timeZone: timezone,
+    },
+    end: {
+      dateTime: slot.end,
+      timeZone: timezone,
+    },
+    transparency: "opaque",
+    extendedProperties: { private: { leadId: lead.leadId } },
+  };
 }
 
 async function getGoogleAccessToken(scopes: string[]) {

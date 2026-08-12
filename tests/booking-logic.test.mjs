@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 import { LEAD_SOURCE, LEAD_STATUS, REQUIRED_SHEET_COLUMNS } from "../app/lib/booking/config.ts";
-import { googleConfigured } from "../app/lib/booking/google.ts";
+import { buildCalendarEventResource, googleConfigured } from "../app/lib/booking/google.ts";
 import {
   buildAvailabilitySlots,
   isSlotStillAvailable,
@@ -11,7 +12,16 @@ import {
   isLikelyDuplicate,
   rateLimit,
 } from "../app/lib/booking/security.ts";
-import { isValidOwnerToken } from "../app/lib/booking/ownerAuth.ts";
+import {
+  clearedOwnerSessionCookieOptions,
+  createOwnerSession,
+  isOwnerAuthorized,
+  isValidOwnerSession,
+  isValidOwnerToken,
+  OWNER_SESSION_COOKIE,
+  ownerSessionCookieOptions,
+  revokeOwnerSession,
+} from "../app/lib/booking/ownerAuth.ts";
 import {
   createLeadId,
   mapLeadToColumns,
@@ -147,6 +157,61 @@ test("owner approval token uses server-side secret", () => {
   else process.env.OWNER_APPROVAL_TOKEN = previous;
 });
 
+test("owner page markup cannot serialize raw token in links or hidden form fields", () => {
+  const source = readFileSync("app/owner/approvals/page.tsx", "utf8");
+  assert.equal(source.includes("searchParams"), false);
+  assert.equal(source.includes("?token="), false);
+  assert.equal(source.includes('type="hidden" value={token}'), false);
+  assert.equal(source.includes('name="token" type="hidden"'), false);
+});
+
+test("owner signed session accepts valid cookie and rejects invalid sessions", () => {
+  const previous = process.env.OWNER_APPROVAL_TOKEN;
+  process.env.OWNER_APPROVAL_TOKEN = "owner-secret";
+
+  const session = createOwnerSession(1_786_000_000_000);
+  assert.equal(isValidOwnerSession(session, 1_786_000_010_000), true);
+  assert.equal(isValidOwnerSession(`${session}tampered`, 1_786_000_010_000), false);
+  assert.equal(isValidOwnerSession(session, 1_786_000_000_000 + 9 * 60 * 60 * 1000), false);
+
+  const currentSession = createOwnerSession();
+  const request = new Request("https://example.com/api/owner/booking/approve", {
+    headers: { cookie: `${OWNER_SESSION_COOKIE}=${encodeURIComponent(currentSession)}` },
+  });
+  assert.equal(isOwnerAuthorized(request), true);
+
+  const badRequest = new Request("https://example.com/api/owner/booking/approve", {
+    headers: { cookie: `${OWNER_SESSION_COOKIE}=bad-session` },
+  });
+  assert.equal(isOwnerAuthorized(badRequest), false);
+
+  if (previous === undefined) delete process.env.OWNER_APPROVAL_TOKEN;
+  else process.env.OWNER_APPROVAL_TOKEN = previous;
+});
+
+test("owner session cookie is HttpOnly, Secure, strict, and logout clears it", () => {
+  const previous = process.env.OWNER_APPROVAL_TOKEN;
+  process.env.OWNER_APPROVAL_TOKEN = "owner-secret";
+  const session = createOwnerSession();
+  assert.equal(isValidOwnerSession(session), true);
+  revokeOwnerSession(session);
+  assert.equal(isValidOwnerSession(session), false);
+
+  const options = ownerSessionCookieOptions();
+  assert.equal(options.httpOnly, true);
+  assert.equal(options.secure, true);
+  assert.equal(options.sameSite, "strict");
+  assert.equal(options.path, "/");
+
+  const cleared = clearedOwnerSessionCookieOptions();
+  assert.equal(cleared.httpOnly, true);
+  assert.equal(cleared.secure, true);
+  assert.equal(cleared.maxAge, 0);
+
+  if (previous === undefined) delete process.env.OWNER_APPROVAL_TOKEN;
+  else process.env.OWNER_APPROVAL_TOKEN = previous;
+});
+
 test("availability transformation hides private Calendar details and filters busy slots", () => {
   process.env.BOOKING_OPENING_HOUR = "7";
   process.env.BOOKING_CLOSING_HOUR = "10";
@@ -168,6 +233,27 @@ test("availability transformation hides private Calendar details and filters bus
   assert.equal(Object.hasOwn(slots[0], "summary"), false);
 });
 
+test("busy Calendar interval removes every overlapping availability slot", () => {
+  process.env.BOOKING_OPENING_HOUR = "7";
+  process.env.BOOKING_CLOSING_HOUR = "13";
+  process.env.BOOKING_APPOINTMENT_MINUTES = "120";
+  process.env.BOOKING_INTERVAL_MINUTES = "60";
+  process.env.BOOKING_MIN_ADVANCE_HOURS = "0";
+  process.env.BOOKING_HORIZON_DAYS = "0";
+  process.env.BOOKING_TIMEZONE = "America/Los_Angeles";
+
+  const slots = buildAvailabilitySlots(
+    [{ start: "2026-08-11T16:00:00.000Z", end: "2026-08-11T18:00:00.000Z" }],
+    new Date("2026-08-11T07:00:00.000Z"),
+  );
+
+  assert.equal(slots.some((slot) => slot.start === "2026-08-11T14:00:00.000Z"), true);
+  assert.equal(slots.some((slot) => slot.start === "2026-08-11T15:00:00.000Z"), false);
+  assert.equal(slots.some((slot) => slot.start === "2026-08-11T16:00:00.000Z"), false);
+  assert.equal(slots.some((slot) => slot.start === "2026-08-11T17:00:00.000Z"), false);
+  assert.equal(slots.some((slot) => slot.start === "2026-08-11T18:00:00.000Z"), true);
+});
+
 test("server-side final check rejects a slot that overlaps Calendar busy time", () => {
   const available = isSlotStillAvailable(
     "2026-08-11T08:30:00.000Z",
@@ -175,6 +261,48 @@ test("server-side final check rejects a slot that overlaps Calendar busy time", 
     [{ start: "2026-08-11T09:00:00.000Z", end: "2026-08-11T10:00:00.000Z" }],
   );
   assert.equal(available, false);
+});
+
+test("approved Calendar event payload uses opaque busy semantics", () => {
+  process.env.BOOKING_TIMEZONE = "America/Los_Angeles";
+  const resource = buildCalendarEventResource(
+    {
+      rowNumber: 2,
+      leadId: "WHS-20260812-TEST01",
+      createdAt: "2026-08-12T20:00:00.000Z",
+      status: "Pending Approval",
+      name: "WHS TEST CUSTOMER",
+      email: "test@example.com",
+      phone: "949-424-5605",
+      streetAddress: "123 Test Way",
+      city: "Mission Viejo",
+      state: "CA",
+      zip: "92691",
+      accessNotes: "",
+      services: "Junk Removal",
+      appointmentType: "On-Site Estimate",
+      projectDescription: "Test project description.",
+      photoReferences: "",
+      requestedDate: "2026-08-15",
+      requestedTime: "Sat, Aug 15, 10:00 AM",
+      source: "Website",
+      internalNotes: "",
+      decisionTimestamp: "",
+      calendarEventId: "",
+      confirmedDate: "",
+      confirmedTime: "",
+      declineReason: "",
+      emailStatus: "",
+    },
+    {
+      start: "2026-08-15T17:00:00.000Z",
+      end: "2026-08-15T19:00:00.000Z",
+    },
+  );
+  assert.equal(resource.transparency, "opaque");
+  assert.equal(resource.start.timeZone, "America/Los_Angeles");
+  assert.equal(resource.end.timeZone, "America/Los_Angeles");
+  assert.equal(resource.extendedProperties.private.leadId, "WHS-20260812-TEST01");
 });
 
 test("rate limit and duplicate fingerprint protections activate", () => {
