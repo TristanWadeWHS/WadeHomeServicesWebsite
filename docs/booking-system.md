@@ -108,8 +108,14 @@ The current storage adapter intentionally defaults to `PHOTO_STORAGE_MODE=disabl
 validates image files and returns non-public mock references. It is not durable
 customer-photo storage.
 
-Before launch, configure an approved private object storage provider and extend
-`app/lib/booking/storage.ts` to return durable authorized photo references.
+For Vercel Blob uploads, configure:
+
+- `PHOTO_STORAGE_MODE=vercel-blob`
+- `BLOB_READ_WRITE_TOKEN`
+
+Uploaded photos are stored as private blobs under a dated `booking-photos/`
+prefix and the Sheet receives the Blob pathname/reference. The browser does not
+receive a public customer-photo directory URL.
 
 ## Google Credentials
 

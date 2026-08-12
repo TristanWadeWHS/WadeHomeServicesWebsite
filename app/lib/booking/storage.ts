@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { put } from "@vercel/blob";
 import { validatePhotoFile } from "./validation";
 
 export type StoredPhoto = {
@@ -26,8 +27,26 @@ export async function storePhoto(file: File): Promise<StoredPhoto> {
     };
   }
 
+  if (mode === "vercel-blob") {
+    const fileName = sanitizeFileName(file.name);
+    const pathname = `booking-photos/${new Date().toISOString().slice(0, 10)}/${crypto.randomUUID()}-${fileName}`;
+    const blob = await put(pathname, file, {
+      access: "private",
+      addRandomSuffix: false,
+      contentType: file.type,
+    });
+
+    return {
+      id: blob.pathname,
+      name: fileName,
+      url: blob.pathname,
+      size: file.size,
+      contentType: file.type,
+    };
+  }
+
   throw new Error(
-    "Photo storage is not configured. Set PHOTO_STORAGE_MODE and provider credentials.",
+    "Photo storage is not configured. Set PHOTO_STORAGE_MODE=vercel-blob and BLOB_READ_WRITE_TOKEN.",
   );
 }
 
