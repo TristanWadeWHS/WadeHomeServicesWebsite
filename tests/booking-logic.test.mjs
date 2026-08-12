@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { LEAD_SOURCE, LEAD_STATUS, REQUIRED_SHEET_COLUMNS } from "../app/lib/booking/config.ts";
+import { googleConfigured } from "../app/lib/booking/google.ts";
 import {
   buildAvailabilitySlots,
   isSlotStillAvailable,
@@ -139,3 +140,45 @@ test("rate limit and duplicate fingerprint protections activate", () => {
   assert.equal(isLikelyDuplicate(fingerprint), false);
   assert.equal(isLikelyDuplicate(fingerprint), true);
 });
+
+test("Google configuration supports service account JSON and spreadsheet fallbacks", () => {
+  const previous = {
+    json: process.env.GOOGLE_SERVICE_ACCOUNT_JSON,
+    email: process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL,
+    privateKey: process.env.GOOGLE_PRIVATE_KEY,
+    spreadsheetId: process.env.GOOGLE_SPREADSHEET_ID,
+    sheetsSpreadsheetId: process.env.GOOGLE_SHEETS_SPREADSHEET_ID,
+    calendarId: process.env.GOOGLE_CALENDAR_ID,
+  };
+
+  process.env.GOOGLE_SERVICE_ACCOUNT_JSON = JSON.stringify({
+    client_email: "service@example.iam.gserviceaccount.com",
+    private_key: "test-private-key",
+  });
+  delete process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL;
+  delete process.env.GOOGLE_PRIVATE_KEY;
+  delete process.env.GOOGLE_SPREADSHEET_ID;
+  process.env.GOOGLE_SHEETS_SPREADSHEET_ID = "spreadsheet-id";
+  process.env.GOOGLE_CALENDAR_ID = "calendar-id";
+
+  assert.equal(googleConfigured(), true);
+
+  restoreEnv(previous);
+});
+
+function restoreEnv(values) {
+  for (const [key, value] of Object.entries({
+    GOOGLE_SERVICE_ACCOUNT_JSON: values.json,
+    GOOGLE_SERVICE_ACCOUNT_EMAIL: values.email,
+    GOOGLE_PRIVATE_KEY: values.privateKey,
+    GOOGLE_SPREADSHEET_ID: values.spreadsheetId,
+    GOOGLE_SHEETS_SPREADSHEET_ID: values.sheetsSpreadsheetId,
+    GOOGLE_CALENDAR_ID: values.calendarId,
+  })) {
+    if (value === undefined) {
+      delete process.env[key];
+    } else {
+      process.env[key] = value;
+    }
+  }
+}

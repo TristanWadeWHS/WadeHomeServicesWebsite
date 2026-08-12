@@ -8,6 +8,11 @@ type GoogleToken = {
   expiresAt: number;
 };
 
+type GoogleCredentials = {
+  clientEmail: string;
+  privateKey: string;
+};
+
 let cachedToken: GoogleToken | null = null;
 
 const GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token";
@@ -16,9 +21,8 @@ const CALENDAR_SCOPE = "https://www.googleapis.com/auth/calendar.freebusy";
 
 export function googleConfigured() {
   return Boolean(
-    process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL &&
-      process.env.GOOGLE_PRIVATE_KEY &&
-      process.env.GOOGLE_SPREADSHEET_ID &&
+    getGoogleCredentials() &&
+      getSpreadsheetId() &&
       process.env.GOOGLE_CALENDAR_ID,
   );
 }
@@ -53,7 +57,7 @@ export async function getCalendarBusyWindows(
 }
 
 export async function appendLeadToSheet(leadId: string, lead: NormalizedLead) {
-  const spreadsheetId = requireEnv("GOOGLE_SPREADSHEET_ID");
+  const spreadsheetId = requireSpreadsheetId();
   const sheetName = process.env.GOOGLE_SHEET_TAB || "Open Leads";
   const token = await getGoogleAccessToken([SHEETS_SCOPE]);
   const headers = await getSheetHeaders(spreadsheetId, sheetName, token);
@@ -139,8 +143,9 @@ async function getGoogleAccessToken(scopes: string[]) {
   }
 
   const now = Math.floor(Date.now() / 1000);
+  const credentials = requireGoogleCredentials();
   const assertion = await signJwt({
-    iss: requireEnv("GOOGLE_SERVICE_ACCOUNT_EMAIL"),
+    iss: credentials.clientEmail,
     scope: scopes.join(" "),
     aud: GOOGLE_TOKEN_URL,
     exp: now + 3600,
@@ -178,8 +183,62 @@ async function signJwt(payload: object) {
   const signer = createSign("RSA-SHA256");
   signer.update(unsigned);
   signer.end();
-  const signature = signer.sign(normalizePrivateKey(requireEnv("GOOGLE_PRIVATE_KEY")));
+  const credentials = requireGoogleCredentials();
+  const signature = signer.sign(normalizePrivateKey(credentials.privateKey));
   return `${unsigned}.${base64Url(signature)}`;
+}
+
+function getGoogleCredentials(): GoogleCredentials | null {
+  const json = process.env.GOOGLE_SERVICE_ACCOUNT_JSON;
+  if (json) {
+    try {
+      const parsed = JSON.parse(json) as {
+        client_email?: string;
+        private_key?: string;
+      };
+      if (parsed.client_email && parsed.private_key) {
+        return {
+          clientEmail: parsed.client_email,
+          privateKey: parsed.private_key,
+        };
+      }
+    } catch {
+      return null;
+    }
+  }
+
+  if (process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL && process.env.GOOGLE_PRIVATE_KEY) {
+    return {
+      clientEmail: process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL,
+      privateKey: process.env.GOOGLE_PRIVATE_KEY,
+    };
+  }
+
+  return null;
+}
+
+function requireGoogleCredentials() {
+  const credentials = getGoogleCredentials();
+  if (!credentials) {
+    throw new Error(
+      "Missing Google service account credentials. Configure GOOGLE_SERVICE_ACCOUNT_JSON or split service account variables.",
+    );
+  }
+  return credentials;
+}
+
+function getSpreadsheetId() {
+  return process.env.GOOGLE_SPREADSHEET_ID || process.env.GOOGLE_SHEETS_SPREADSHEET_ID || "";
+}
+
+function requireSpreadsheetId() {
+  const spreadsheetId = getSpreadsheetId();
+  if (!spreadsheetId) {
+    throw new Error(
+      "Missing required environment variable: GOOGLE_SPREADSHEET_ID or GOOGLE_SHEETS_SPREADSHEET_ID",
+    );
+  }
+  return spreadsheetId;
 }
 
 function base64Url(value: string | Buffer) {

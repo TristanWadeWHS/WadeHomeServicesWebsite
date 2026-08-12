@@ -36,6 +36,8 @@ Calendar event details. It only receives customer-facing availability slots.
 
 Target spreadsheet: `GOOGLE_SPREADSHEET_ID`
 
+Fallback supported spreadsheet variable: `GOOGLE_SHEETS_SPREADSHEET_ID`
+
 Target tab: `GOOGLE_SHEET_TAB`, default `Open Leads`
 
 The integration first reads row 1 from the existing tab. Existing columns are
@@ -109,6 +111,19 @@ customer-photo storage.
 Before launch, configure an approved private object storage provider and extend
 `app/lib/booking/storage.ts` to return durable authorized photo references.
 
+## Google Credentials
+
+Preferred credential variable:
+
+- `GOOGLE_SERVICE_ACCOUNT_JSON`
+
+Fallback split credential variables:
+
+- `GOOGLE_SERVICE_ACCOUNT_EMAIL`
+- `GOOGLE_PRIVATE_KEY`
+
+Credential values must remain server-side only. Do not expose or commit them.
+
 ## Phase 3 Preparation
 
 Phase 2 records requested times as pending requests only. Future approval can:
@@ -120,4 +135,3 @@ Phase 2 records requested times as pending requests only. Future approval can:
 5. notify the customer
 
 No Calendar events are created by this phase.
-
