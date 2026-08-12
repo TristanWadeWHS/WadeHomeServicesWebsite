@@ -44,7 +44,7 @@ The integration first reads row 1 from the existing tab. Existing columns are
 preserved in their current order. Required missing columns are appended to the
 end of row 1 so existing dashboard dependencies are not rearranged.
 
-Minimum columns used by the website:
+Canonical columns used by new website leads:
 
 - Unique ID
 - Created At
@@ -65,6 +65,21 @@ Minimum columns used by the website:
 - Requested Time
 - Source
 - Internal Notes
+
+Legacy duplicate columns such as `ZIP code` and
+`Optional unit / gate / access notes` are preserved if they already exist, but
+new website lead data is written only to the standardized `ZIP Code` and
+`Optional Unit / Gate / Access Notes` columns.
+
+Phase 3 appends these columns when missing. It does not delete, reorder, or
+rewrite historical columns:
+
+- Approval / Decision Timestamp
+- Google Calendar Event ID
+- Confirmed Date
+- Confirmed Time
+- Decline Reason
+- Email Status
 
 ## Calendar Rules
 
@@ -138,14 +153,42 @@ Fallback split credential variables:
 
 Credential values must remain server-side only. Do not expose or commit them.
 
-## Phase 3 Preparation
+## Phase 2 Behavior
 
-Phase 2 records requested times as pending requests only. Future approval can:
+Phase 2 records requested times as pending requests only:
 
-1. read the Sheet row by Unique ID
-2. re-check Calendar availability
-3. create the Google Calendar event if approved
-4. update Status to Confirmed or Declined
-5. notify the customer
+- customer request creates a Sheet row
+- `Status = Pending Approval`
+- no Calendar event is created before owner approval
 
-No Calendar events are created by this phase.
+## Phase 3 Owner Approval
+
+Owner review is available at `/owner/approvals` when `OWNER_APPROVAL_TOKEN` is
+configured. The token is checked server-side before pending leads are displayed
+or decisions are accepted.
+
+Approve flow:
+
+1. validate owner token
+2. load the lead by `Unique ID`
+3. require `Status = Pending Approval`
+4. re-check Google Calendar free/busy for the requested time
+5. look for an existing Calendar event with the lead id
+6. create a Calendar event only if none exists
+7. update the Sheet with `Status = Approved`, decision timestamp, Calendar
+   Event ID, confirmed date, and confirmed time
+
+Decline flow:
+
+1. validate owner token
+2. load the lead by `Unique ID`
+3. require `Status = Pending Approval`
+4. update the Sheet with `Status = Declined`, decision timestamp, and decline
+   reason
+5. do not create a Calendar event
+
+Email delivery is intentionally not marked successful yet. The current Google
+service account is suitable for Calendar/Sheets, but it is not assumed to be
+authorized to send mail as Wade Home Services. Phase 3 records email status as
+needing configuration until Gmail OAuth/domain delegation or a transactional
+email provider is configured.

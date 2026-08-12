@@ -12,7 +12,7 @@ export const APPOINTMENT_TYPES = [
 export const LEAD_STATUS = "Pending Approval";
 export const LEAD_SOURCE = "Website";
 
-export const REQUIRED_SHEET_COLUMNS = [
+export const WEBSITE_LEAD_COLUMNS = [
   "Unique ID",
   "Created At",
   "Status",
@@ -33,6 +33,24 @@ export const REQUIRED_SHEET_COLUMNS = [
   "Source",
   "Internal Notes",
 ] as const;
+
+export const PHASE_3_SHEET_COLUMNS = [
+  "Approval / Decision Timestamp",
+  "Google Calendar Event ID",
+  "Confirmed Date",
+  "Confirmed Time",
+  "Decline Reason",
+  "Email Status",
+] as const;
+
+export const REQUIRED_SHEET_COLUMNS = [
+  ...WEBSITE_LEAD_COLUMNS,
+  ...PHASE_3_SHEET_COLUMNS,
+] as const;
+
+export const APPROVED_STATUS = "Approved";
+export const DECLINED_STATUS = "Declined";
+export const CONFLICT_STATUS = "Pending Approval - Time Conflict";
 
 export type ServiceOption = (typeof SERVICE_OPTIONS)[number];
 export type AppointmentType = (typeof APPOINTMENT_TYPES)[number];

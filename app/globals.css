@@ -1100,6 +1100,69 @@ p {
   font-size: clamp(1.35rem, 3vw, 2.1rem);
 }
 
+.owner-shell {
+  padding-top: 20px;
+}
+
+.owner-auth,
+.owner-empty,
+.owner-lead {
+  background: white;
+  border: 1px solid rgba(31, 46, 39, 0.12);
+  border-radius: 8px;
+  box-shadow: 0 18px 48px rgba(23, 27, 25, 0.08);
+  padding: clamp(18px, 4vw, 30px);
+}
+
+.owner-auth,
+.owner-lead-list {
+  display: grid;
+  gap: 18px;
+}
+
+.owner-lead__header,
+.owner-actions {
+  align-items: flex-start;
+  display: flex;
+  gap: 14px;
+  justify-content: space-between;
+}
+
+.owner-lead__header h2 {
+  font-size: clamp(1.4rem, 3vw, 2rem);
+  margin: 0;
+}
+
+.owner-detail-grid {
+  display: grid;
+  gap: 14px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin: 22px 0;
+}
+
+.owner-detail-grid div {
+  border-top: 1px solid rgba(31, 46, 39, 0.1);
+  padding-top: 12px;
+}
+
+.owner-detail-grid dt {
+  color: var(--forest);
+  font-size: 0.76rem;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.owner-detail-grid dd {
+  margin: 5px 0 0;
+}
+
+.owner-actions form {
+  display: grid;
+  gap: 10px;
+  min-width: min(100%, 260px);
+}
+
 .site-footer {
   align-items: start;
   background: var(--charcoal);
@@ -1166,9 +1229,15 @@ p {
   }
 
   .estimator,
+  .owner-lead__header,
+  .owner-actions,
   .site-footer {
     align-items: flex-start;
     flex-direction: column;
+  }
+
+  .owner-detail-grid {
+    grid-template-columns: 1fr;
   }
 
   .footer-links {

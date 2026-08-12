@@ -11,6 +11,7 @@ import {
   isLikelyDuplicate,
   rateLimit,
 } from "../app/lib/booking/security.ts";
+import { isValidOwnerToken } from "../app/lib/booking/ownerAuth.ts";
 import {
   createLeadId,
   mapLeadToColumns,
@@ -102,6 +103,48 @@ test("maps leads to existing Sheet columns while preserving pending/source field
   assert.equal(row[statusIndex], LEAD_STATUS);
   assert.equal(row[sourceIndex], LEAD_SOURCE);
   assert.equal(row[serviceIndex], "Junk Removal, Light Demolition");
+});
+
+test("writes website leads only to canonical Sheet columns", () => {
+  const result = validateSubmission(validSubmission());
+  assert.equal(result.ok, true);
+  const headers = [
+    "ZIP code",
+    "Optional unit / gate / access notes",
+    ...REQUIRED_SHEET_COLUMNS,
+  ];
+  const row = mapLeadToColumns("WHS-20260811-A7K4P2", result.value, headers);
+  assert.equal(row[headers.indexOf("ZIP code")], "");
+  assert.equal(row[headers.indexOf("Optional unit / gate / access notes")], "");
+  assert.equal(row[headers.indexOf("ZIP Code")], "92691");
+  assert.equal(
+    row[headers.indexOf("Optional Unit / Gate / Access Notes")],
+    "Gate code provided by phone",
+  );
+});
+
+test("customer-submitted status and source are ignored by Sheet mapping", () => {
+  const result = validateSubmission({
+    ...validSubmission(),
+    status: "Approved",
+    source: "Customer",
+    calendarEventId: "forged-event",
+  });
+  assert.equal(result.ok, true);
+  const row = mapLeadToColumns("WHS-20260811-A7K4P2", result.value, REQUIRED_SHEET_COLUMNS);
+  assert.equal(row[REQUIRED_SHEET_COLUMNS.indexOf("Status")], LEAD_STATUS);
+  assert.equal(row[REQUIRED_SHEET_COLUMNS.indexOf("Source")], LEAD_SOURCE);
+  assert.equal(row[REQUIRED_SHEET_COLUMNS.indexOf("Google Calendar Event ID")], "");
+});
+
+test("owner approval token uses server-side secret", () => {
+  const previous = process.env.OWNER_APPROVAL_TOKEN;
+  process.env.OWNER_APPROVAL_TOKEN = "owner-secret";
+  assert.equal(isValidOwnerToken("owner-secret"), true);
+  assert.equal(isValidOwnerToken("wrong-secret"), false);
+  assert.equal(isValidOwnerToken(""), false);
+  if (previous === undefined) delete process.env.OWNER_APPROVAL_TOKEN;
+  else process.env.OWNER_APPROVAL_TOKEN = previous;
 });
 
 test("availability transformation hides private Calendar details and filters busy slots", () => {

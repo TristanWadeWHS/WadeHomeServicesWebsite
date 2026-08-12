@@ -50,3 +50,43 @@ export type AvailabilitySlot = {
   label: string;
   dateLabel: string;
 };
+
+export type SheetLead = {
+  rowNumber: number;
+  leadId: string;
+  createdAt: string;
+  status: string;
+  name: string;
+  email: string;
+  phone: string;
+  streetAddress: string;
+  city: string;
+  state: string;
+  zip: string;
+  accessNotes: string;
+  services: string;
+  appointmentType: string;
+  projectDescription: string;
+  photoReferences: string;
+  requestedDate: string;
+  requestedTime: string;
+  source: string;
+  internalNotes: string;
+  decisionTimestamp: string;
+  calendarEventId: string;
+  confirmedDate: string;
+  confirmedTime: string;
+  declineReason: string;
+  emailStatus: string;
+};
+
+export type OwnerDecisionResult = {
+  ok: true;
+  lead: SheetLead;
+  calendarEventCreated: boolean;
+  emailStatus: string;
+} | {
+  ok: false;
+  message: string;
+  lead?: SheetLead;
+};
