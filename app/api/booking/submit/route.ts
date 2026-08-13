@@ -3,6 +3,7 @@ import {
   getCalendarBusyWindows,
   googleConfigured,
 } from "@/app/lib/booking/google";
+import { sendOwnerNewLeadNotification } from "@/app/lib/booking/ownerNotifications";
 import { jsonError, logServerError } from "@/app/lib/booking/responses";
 import { isSlotStillAvailable } from "@/app/lib/booking/scheduling";
 import {
@@ -10,6 +11,7 @@ import {
   duplicateFingerprint,
   getIdempotentResponse,
   isLikelyDuplicate,
+  readJsonWithLimit,
   rateLimit,
   setIdempotentResponse,
   verifyTurnstile,
@@ -17,20 +19,17 @@ import {
 import { createLeadId, validateSubmission } from "@/app/lib/booking/validation";
 
 export const runtime = "nodejs";
+const MAX_BOOKING_SUBMISSION_BYTES = 128 * 1024;
 
 export async function POST(request: Request) {
   const ip = clientIp(request);
   const limit = rateLimit(`submit:${ip}`, 6, 30 * 60 * 1000);
   if (!limit.ok) return jsonError("Too many submission attempts. Try again soon.", 429);
 
-  let body: unknown;
-  try {
-    body = await request.json();
-  } catch {
-    return jsonError("Request could not be read.", 400);
-  }
+  const body = await readJsonWithLimit(request, MAX_BOOKING_SUBMISSION_BYTES);
+  if (!body.ok) return jsonError(body.message, body.status);
 
-  const validation = validateSubmission(body);
+  const validation = validateSubmission(body.value);
   if (!validation.ok) return jsonError("Please fix the highlighted fields.", 400, validation.errors);
 
   const lead = validation.value;
@@ -76,6 +75,15 @@ export async function POST(request: Request) {
       pending: true,
     };
     setIdempotentResponse(lead.idempotencyKey, response);
+
+    const notification = await sendOwnerNewLeadNotification(leadId, lead);
+    if (!notification.ok) {
+      logServerError("booking.owner-notification", new Error(notification.reason), {
+        leadId,
+        skipped: notification.skipped === true,
+      });
+    }
+
     return Response.json(response);
   } catch (error) {
     logServerError("booking.submit", error, { ip, leadId });

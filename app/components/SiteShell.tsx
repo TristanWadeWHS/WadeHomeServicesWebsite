@@ -27,7 +27,7 @@ export function SiteShell({ children }: { children: ReactNode }) {
           </span>
           <span className="brand__copy">
             <span className="brand__name">Wade Home Services</span>
-            <span className="brand__tagline">Orange County cleanouts</span>
+            <span className="brand__tagline">Southern California&apos;s Cleanouts.</span>
           </span>
         </Link>
         <nav className="site-nav" aria-label="Primary navigation">
@@ -39,7 +39,7 @@ export function SiteShell({ children }: { children: ReactNode }) {
         </nav>
         <div className="header-actions">
           <a className="button button--ghost" href="tel:+19494245605">
-            Call 949-424-5605
+            Call Now!
           </a>
           <Link className="button button--primary" href="/book">
             Book Now

@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 import { LEAD_SOURCE, LEAD_STATUS, REQUIRED_SHEET_COLUMNS } from "../app/lib/booking/config.ts";
 import { buildCalendarEventResource, googleConfigured } from "../app/lib/booking/google.ts";
+import { ownerNotificationConfigured } from "../app/lib/booking/ownerNotifications.ts";
 import {
   buildAvailabilitySlots,
   isSlotStillAvailable,
@@ -10,6 +11,7 @@ import {
 import {
   duplicateFingerprint,
   isLikelyDuplicate,
+  readJsonWithLimit,
   rateLimit,
 } from "../app/lib/booking/security.ts";
 import {
@@ -26,6 +28,7 @@ import {
 } from "../app/lib/booking/ownerAuth.ts";
 import {
   createLeadId,
+  escapeSheetCell,
   mapLeadToColumns,
   validateSubmission,
 } from "../app/lib/booking/validation.ts";
@@ -149,6 +152,31 @@ test("customer-submitted status and source are ignored by Sheet mapping", () => 
   assert.equal(row[REQUIRED_SHEET_COLUMNS.indexOf("Google Calendar Event ID")], "");
 });
 
+test("customer-controlled Sheet values are escaped against formula injection", () => {
+  const result = validateSubmission(
+    validSubmission({
+      customer: {
+        name: "=HYPERLINK(\"https://evil.example\",\"click\")",
+        email: "TEST@EXAMPLE.COM",
+        phone: "(949) 424-5605",
+      },
+      projectDescription: "+cmd|' /C calc'!A0",
+    }),
+  );
+  assert.equal(result.ok, true);
+
+  const row = mapLeadToColumns("WHS-20260811-A7K4P2", result.value, REQUIRED_SHEET_COLUMNS);
+  assert.equal(
+    row[REQUIRED_SHEET_COLUMNS.indexOf("Name")].startsWith("'="),
+    true,
+  );
+  assert.equal(
+    row[REQUIRED_SHEET_COLUMNS.indexOf("Project Description")].startsWith("'+"),
+    true,
+  );
+  assert.equal(escapeSheetCell("@hidden").startsWith("'@"), true);
+});
+
 test("owner approval token uses server-side secret", () => {
   const previous = process.env.OWNER_APPROVAL_TOKEN;
   process.env.OWNER_APPROVAL_TOKEN = "owner-secret";
@@ -177,6 +205,44 @@ test("owner approval actions are handled by the client instead of raw API form n
   assert.equal(clientSource.includes('credentials: "same-origin"'), true);
   assert.equal(clientSource.includes("Appointment approved and added to Google Calendar."), true);
   assert.equal(clientSource.includes("This requested time is no longer available."), true);
+});
+
+test("JSON body reader enforces size limits before validation", async () => {
+  const small = new Request("https://example.com/api/booking/submit", {
+    method: "POST",
+    body: JSON.stringify({ ok: true }),
+    headers: { "content-type": "application/json" },
+  });
+  const parsed = await readJsonWithLimit(small, 1024);
+  assert.equal(parsed.ok, true);
+  assert.equal(parsed.value.ok, true);
+
+  const large = new Request("https://example.com/api/booking/submit", {
+    method: "POST",
+    body: JSON.stringify({ text: "x".repeat(2048) }),
+    headers: { "content-type": "application/json" },
+  });
+  const rejected = await readJsonWithLimit(large, 512);
+  assert.equal(rejected.ok, false);
+  assert.equal(rejected.status, 413);
+});
+
+test("owner notification configuration requires server-side email settings", () => {
+  const previous = {
+    apiKey: process.env.RESEND_API_KEY,
+    to: process.env.OWNER_NOTIFICATION_EMAIL,
+    from: process.env.OWNER_NOTIFICATION_FROM,
+  };
+
+  delete process.env.RESEND_API_KEY;
+  process.env.OWNER_NOTIFICATION_EMAIL = "owner@example.com";
+  process.env.OWNER_NOTIFICATION_FROM = "Wade Home Services <bookings@example.com>";
+  assert.equal(ownerNotificationConfigured(), false);
+
+  process.env.RESEND_API_KEY = "re_test";
+  assert.equal(ownerNotificationConfigured(), true);
+
+  restoreEmailEnv(previous);
 });
 
 test("owner signed session accepts valid cookie and rejects invalid sessions", () => {
@@ -397,6 +463,20 @@ function restoreEnv(values) {
     GOOGLE_SPREADSHEET_ID: values.spreadsheetId,
     GOOGLE_SHEETS_SPREADSHEET_ID: values.sheetsSpreadsheetId,
     GOOGLE_CALENDAR_ID: values.calendarId,
+  })) {
+    if (value === undefined) {
+      delete process.env[key];
+    } else {
+      process.env[key] = value;
+    }
+  }
+}
+
+function restoreEmailEnv(values) {
+  for (const [key, value] of Object.entries({
+    RESEND_API_KEY: values.apiKey,
+    OWNER_NOTIFICATION_EMAIL: values.to,
+    OWNER_NOTIFICATION_FROM: values.from,
   })) {
     if (value === undefined) {
       delete process.env[key];

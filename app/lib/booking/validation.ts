@@ -181,7 +181,7 @@ export function mapLeadToColumns(
     "Internal Notes": "Website request awaiting owner review.",
   };
 
-  return headers.map((header) => values[header] ?? "");
+  return headers.map((header) => escapeSheetCell(values[header] ?? ""));
 }
 
 export function normalizeEmail(value: string) {
@@ -202,4 +202,9 @@ function normalizeState(value: string) {
 
 function normalizeZip(value: string) {
   return normalizeText(value).replace(/[^\d-]/g, "");
+}
+
+export function escapeSheetCell(value: string) {
+  const normalized = normalizeText(value);
+  return /^[=+\-@\t\r]/.test(normalized) ? `'${normalized}` : normalized;
 }

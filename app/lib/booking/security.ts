@@ -30,6 +30,27 @@ export function rateLimit(key: string, limit: number, windowMs: number) {
   return { ok: true, remaining: limit - current.count };
 }
 
+export async function readJsonWithLimit(request: Request, maxBytes: number) {
+  const length = Number(request.headers.get("content-length") ?? "0");
+  if (Number.isFinite(length) && length > maxBytes) {
+    return { ok: false as const, status: 413, message: "Request is too large." };
+  }
+
+  const text = await readRequestTextWithLimit(request, maxBytes);
+  if (!text.ok) return text;
+
+  try {
+    return { ok: true as const, value: JSON.parse(text.value) as unknown };
+  } catch {
+    return { ok: false as const, status: 400, message: "Request could not be read." };
+  }
+}
+
+export function requestBodyWithinLimit(request: Request, maxBytes: number) {
+  const length = Number(request.headers.get("content-length") ?? "0");
+  return !Number.isFinite(length) || length <= maxBytes;
+}
+
 export async function verifyTurnstile(token: string | undefined, ip: string) {
   const secret = process.env.TURNSTILE_SECRET_KEY;
   if (!secret) return { ok: true, skipped: true };
@@ -69,4 +90,35 @@ export function getIdempotentResponse(key: string | undefined) {
 export function setIdempotentResponse(key: string | undefined, response: unknown) {
   if (!key) return;
   idempotencyResponses.set(key, response);
+}
+
+async function readRequestTextWithLimit(request: Request, maxBytes: number) {
+  if (!request.body) return { ok: false as const, status: 400, message: "Request could not be read." };
+
+  const reader = request.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let received = 0;
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    received += value.byteLength;
+    if (received > maxBytes) {
+      await reader.cancel();
+      return { ok: false as const, status: 413, message: "Request is too large." };
+    }
+    chunks.push(value);
+  }
+
+  return { ok: true as const, value: new TextDecoder().decode(concatChunks(chunks, received)) };
+}
+
+function concatChunks(chunks: Uint8Array[], totalLength: number) {
+  const buffer = new Uint8Array(totalLength);
+  let offset = 0;
+  for (const chunk of chunks) {
+    buffer.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return buffer;
 }
