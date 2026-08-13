@@ -3,7 +3,10 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 import { LEAD_SOURCE, LEAD_STATUS, REQUIRED_SHEET_COLUMNS } from "../app/lib/booking/config.ts";
 import { buildCalendarEventResource, googleConfigured } from "../app/lib/booking/google.ts";
-import { ownerNotificationConfigured } from "../app/lib/booking/ownerNotifications.ts";
+import {
+  ownerApprovalPortalUrl,
+  ownerNotificationConfigured,
+} from "../app/lib/booking/ownerNotifications.ts";
 import {
   buildAvailabilitySlots,
   isSlotStillAvailable,
@@ -188,16 +191,17 @@ test("owner approval token uses server-side secret", () => {
 });
 
 test("owner page markup cannot serialize raw token in links or hidden form fields", () => {
-  const source = readFileSync("app/owner/approvals/page.tsx", "utf8");
+  const source = readFileSync("app/owner/page.tsx", "utf8");
   assert.equal(source.includes("searchParams"), false);
+  assert.equal(source.includes("OWNER_APPROVAL_TOKEN"), false);
   assert.equal(source.includes("?token="), false);
   assert.equal(source.includes('type="hidden" value={token}'), false);
   assert.equal(source.includes('name="token" type="hidden"'), false);
 });
 
 test("owner approval actions are handled by the client instead of raw API form navigation", () => {
-  const pageSource = readFileSync("app/owner/approvals/page.tsx", "utf8");
-  const clientSource = readFileSync("app/owner/approvals/OwnerApprovalsClient.tsx", "utf8");
+  const pageSource = readFileSync("app/owner/page.tsx", "utf8");
+  const clientSource = readFileSync("app/owner/OwnerApprovalsClient.tsx", "utf8");
 
   assert.equal(pageSource.includes('action="/api/owner/booking/approve"'), false);
   assert.equal(pageSource.includes('action="/api/owner/booking/decline"'), false);
@@ -205,6 +209,13 @@ test("owner approval actions are handled by the client instead of raw API form n
   assert.equal(clientSource.includes('credentials: "same-origin"'), true);
   assert.equal(clientSource.includes("Appointment approved and added to Google Calendar."), true);
   assert.equal(clientSource.includes("This requested time is no longer available."), true);
+});
+
+test("legacy owner approvals route redirects to canonical owner portal", () => {
+  const source = readFileSync("app/owner/approvals/page.tsx", "utf8");
+  assert.equal(source.includes('redirect("/owner")'), true);
+  assert.equal(source.includes("OWNER_APPROVAL_TOKEN"), false);
+  assert.equal(source.includes("?token="), false);
 });
 
 test("JSON body reader enforces size limits before validation", async () => {
@@ -243,6 +254,32 @@ test("owner notification configuration requires server-side email settings", () 
   assert.equal(ownerNotificationConfigured(), true);
 
   restoreEmailEnv(previous);
+});
+
+test("owner notification portal URL prefers configured owner URL and falls back to /owner", () => {
+  const previous = {
+    ownerPortal: process.env.OWNER_APPROVAL_PORTAL_URL,
+    publicSite: process.env.NEXT_PUBLIC_SITE_URL,
+    productionUrl: process.env.VERCEL_PROJECT_PRODUCTION_URL,
+    vercelUrl: process.env.VERCEL_URL,
+  };
+
+  process.env.OWNER_APPROVAL_PORTAL_URL = "https://www.wadehomeservices.com/owner";
+  assert.equal(ownerApprovalPortalUrl(), "https://www.wadehomeservices.com/owner");
+
+  delete process.env.OWNER_APPROVAL_PORTAL_URL;
+  process.env.NEXT_PUBLIC_SITE_URL = "https://preview.example.com/";
+  assert.equal(ownerApprovalPortalUrl(), "https://preview.example.com/owner");
+
+  delete process.env.NEXT_PUBLIC_SITE_URL;
+  process.env.VERCEL_PROJECT_PRODUCTION_URL = "wadehomeservices.com";
+  delete process.env.VERCEL_URL;
+  assert.equal(ownerApprovalPortalUrl(), "https://wadehomeservices.com/owner");
+
+  delete process.env.VERCEL_PROJECT_PRODUCTION_URL;
+  assert.equal(ownerApprovalPortalUrl(), "/owner");
+
+  restoreOwnerPortalEnv(previous);
 });
 
 test("owner signed session accepts valid cookie and rejects invalid sessions", () => {
@@ -477,6 +514,21 @@ function restoreEmailEnv(values) {
     RESEND_API_KEY: values.apiKey,
     OWNER_NOTIFICATION_EMAIL: values.to,
     OWNER_NOTIFICATION_FROM: values.from,
+  })) {
+    if (value === undefined) {
+      delete process.env[key];
+    } else {
+      process.env[key] = value;
+    }
+  }
+}
+
+function restoreOwnerPortalEnv(values) {
+  for (const [key, value] of Object.entries({
+    OWNER_APPROVAL_PORTAL_URL: values.ownerPortal,
+    NEXT_PUBLIC_SITE_URL: values.publicSite,
+    VERCEL_PROJECT_PRODUCTION_URL: values.productionUrl,
+    VERCEL_URL: values.vercelUrl,
   })) {
     if (value === undefined) {
       delete process.env[key];

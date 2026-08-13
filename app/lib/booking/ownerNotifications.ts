@@ -37,6 +37,7 @@ export async function sendOwnerNewLeadNotification(
     headers: {
       Authorization: `Bearer ${apiKey}`,
       "Content-Type": "application/json",
+      "Idempotency-Key": `owner-new-lead-${leadId}`,
     },
     body: JSON.stringify({
       from,
@@ -54,17 +55,17 @@ export async function sendOwnerNewLeadNotification(
   return { ok: true };
 }
 
-function ownerApprovalPortalUrl() {
+export function ownerApprovalPortalUrl() {
   const explicit = process.env.OWNER_APPROVAL_PORTAL_URL;
   if (explicit) return explicit;
 
   const publicSiteUrl = process.env.NEXT_PUBLIC_SITE_URL;
-  if (publicSiteUrl) return `${trimTrailingSlash(publicSiteUrl)}/owner/approvals`;
+  if (publicSiteUrl) return `${trimTrailingSlash(publicSiteUrl)}/owner`;
 
   const vercelUrl = process.env.VERCEL_PROJECT_PRODUCTION_URL || process.env.VERCEL_URL;
-  if (vercelUrl) return `https://${trimTrailingSlash(vercelUrl)}/owner/approvals`;
+  if (vercelUrl) return `https://${trimTrailingSlash(vercelUrl)}/owner`;
 
-  return "/owner/approvals";
+  return "/owner";
 }
 
 function ownerNotificationHtml(
@@ -102,7 +103,7 @@ function ownerNotificationHtml(
         <h2 style="color:#08251d;font-size:16px;margin:22px 0 8px;">Project description</h2>
         <p style="white-space:pre-line;">${escapeHtml(lead.projectDescription)}</p>
         <p style="margin:24px 0 0;">
-          <a href="${escapeHtml(portalUrl)}" style="background:#123f2f;border-radius:6px;color:#ffffff;display:inline-block;font-weight:800;padding:12px 16px;text-decoration:none;">Open owner approval portal</a>
+          <a href="${escapeHtml(portalUrl)}" style="background:#123f2f;border-radius:6px;color:#ffffff;display:inline-block;font-weight:800;padding:12px 16px;text-decoration:none;">Review Request</a>
         </p>
       </section>
     </main>
@@ -126,7 +127,7 @@ function ownerNotificationText(
     `Project description: ${lead.projectDescription}`,
     `Requested date: ${new Date(lead.requestedSlot.start).toISOString().slice(0, 10)}`,
     `Requested time: ${lead.requestedSlot.label}`,
-    `Owner approval portal: ${portalUrl}`,
+    `Review Request: ${portalUrl}`,
   ].join("\n");
 }
 

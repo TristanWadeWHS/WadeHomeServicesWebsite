@@ -5,8 +5,8 @@ import {
   APPROVED_STATUS,
   CONFLICT_STATUS,
   DECLINED_STATUS,
-} from "../../lib/booking/config";
-import type { OwnerDecisionResult, SheetLead } from "../../lib/booking/types";
+} from "../lib/booking/config";
+import type { OwnerDecisionResult, SheetLead } from "../lib/booking/types";
 
 type OwnerApprovalsClientProps = {
   initialLeads: SheetLead[];
@@ -134,7 +134,7 @@ function OwnerLeadCard({
           <LeadStatusDetails lead={lead} />
         </div>
         <div className="owner-actions owner-actions--compact">
-          <a className="button button--ghost" href="/owner/approvals">
+          <a className="button button--ghost" href="/owner">
             Refresh
           </a>
           <form action="/api/owner/session/logout" method="post">
@@ -260,3 +260,4 @@ function decisionPayloadLead(
   if ("lead" in payload && payload.lead) return payload.lead;
   return null;
 }
+
