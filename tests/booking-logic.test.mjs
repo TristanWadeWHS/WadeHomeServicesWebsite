@@ -4,6 +4,7 @@ import test from "node:test";
 import { LEAD_SOURCE, LEAD_STATUS, REQUIRED_SHEET_COLUMNS } from "../app/lib/booking/config.ts";
 import { buildCalendarEventResource, googleConfigured } from "../app/lib/booking/google.ts";
 import {
+  buildOwnerNotificationPayload,
   ownerApprovalPortalUrl,
   ownerNotificationConfigured,
 } from "../app/lib/booking/ownerNotifications.ts";
@@ -240,17 +241,17 @@ test("JSON body reader enforces size limits before validation", async () => {
 
 test("owner notification configuration requires server-side email settings", () => {
   const previous = {
-    apiKey: process.env.RESEND_API_KEY,
+    apiKey: process.env.BREVO_API_KEY,
     to: process.env.OWNER_NOTIFICATION_EMAIL,
-    from: process.env.OWNER_NOTIFICATION_FROM,
+    portalUrl: process.env.OWNER_APPROVAL_PORTAL_URL,
   };
 
-  delete process.env.RESEND_API_KEY;
+  delete process.env.BREVO_API_KEY;
   process.env.OWNER_NOTIFICATION_EMAIL = "owner@example.com";
-  process.env.OWNER_NOTIFICATION_FROM = "Wade Home Services <bookings@example.com>";
+  process.env.OWNER_APPROVAL_PORTAL_URL = "https://www.wadehomeservices.com/owner";
   assert.equal(ownerNotificationConfigured(), false);
 
-  process.env.RESEND_API_KEY = "re_test";
+  process.env.BREVO_API_KEY = "xkeysib-test";
   assert.equal(ownerNotificationConfigured(), true);
 
   restoreEmailEnv(previous);
@@ -280,6 +281,67 @@ test("owner notification portal URL prefers configured owner URL and falls back 
   assert.equal(ownerApprovalPortalUrl(), "/owner");
 
   restoreOwnerPortalEnv(previous);
+});
+
+test("Brevo owner notification payload includes required lead details and no customer recipient", () => {
+  const validation = validateSubmission(
+    validSubmission({
+      services: ["Junk Removal", "Storage / Relocation"],
+      appointmentType: "Service Appointment Request",
+      address: {
+        street: "456 Brevo Test Lane",
+        city: "Mission Viejo",
+        state: "CA",
+        zip: "92691",
+        accessNotes: "",
+      },
+      customer: {
+        name: "Owner Email Test Customer",
+        email: "customer@example.com",
+        phone: "949-424-5605",
+      },
+      projectDescription: "VERSION 4.1 BREVO TEST BOOKING content verification.",
+      requestedSlot: {
+        start: "2026-08-20T22:00:00.000Z",
+        end: "2026-08-21T00:00:00.000Z",
+        label: "Thu, Aug 20, 3:00 PM",
+      },
+    }),
+  );
+  assert.equal(validation.ok, true);
+
+  const payload = buildOwnerNotificationPayload(
+    "WHS-20260820-ABC123",
+    validation.value,
+    "https://www.wadehomeservices.com/owner",
+    "owner@example.com",
+  );
+  const combinedContent = `${payload.htmlContent}\n${payload.textContent}`;
+
+  assert.deepEqual(payload.sender, {
+    email: "WadeHomeServices@yahoo.com",
+    name: "Wade Home Services",
+  });
+  assert.deepEqual(payload.to, [{ email: "owner@example.com" }]);
+  assert.equal(payload.to.some((recipient) => recipient.email === "customer@example.com"), false);
+  assert.equal(payload.subject, "New Wade Home Services Booking Request");
+  assert.match(combinedContent, /WHS-20260820-ABC123/);
+  assert.match(combinedContent, /Owner Email Test Customer/);
+  assert.match(combinedContent, /customer@example\.com/);
+  assert.match(combinedContent, /949-424-5605/);
+  assert.match(combinedContent, /456 Brevo Test Lane/);
+  assert.match(combinedContent, /Mission Viejo/);
+  assert.match(combinedContent, /CA/);
+  assert.match(combinedContent, /92691/);
+  assert.match(combinedContent, /Junk Removal, Storage \/ Relocation/);
+  assert.match(combinedContent, /Service Appointment Request/);
+  assert.match(combinedContent, /VERSION 4\.1 BREVO TEST BOOKING/);
+  assert.match(combinedContent, /2026-08-20/);
+  assert.match(combinedContent, /Thu, Aug 20, 3:00 PM/);
+  assert.match(combinedContent, /Review Request/);
+  assert.match(combinedContent, /https:\/\/www\.wadehomeservices\.com\/owner/);
+  assert.equal(combinedContent.includes("OWNER_APPROVAL_TOKEN"), false);
+  assert.equal(combinedContent.includes("?token="), false);
 });
 
 test("owner signed session accepts valid cookie and rejects invalid sessions", () => {
@@ -511,9 +573,9 @@ function restoreEnv(values) {
 
 function restoreEmailEnv(values) {
   for (const [key, value] of Object.entries({
-    RESEND_API_KEY: values.apiKey,
+    BREVO_API_KEY: values.apiKey,
     OWNER_NOTIFICATION_EMAIL: values.to,
-    OWNER_NOTIFICATION_FROM: values.from,
+    OWNER_APPROVAL_PORTAL_URL: values.portalUrl,
   })) {
     if (value === undefined) {
       delete process.env[key];

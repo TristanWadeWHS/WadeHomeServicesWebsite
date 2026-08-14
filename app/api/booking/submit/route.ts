@@ -82,6 +82,18 @@ export async function POST(request: Request) {
         leadId,
         skipped: notification.skipped === true,
       });
+    } else {
+      console.info(
+        JSON.stringify({
+          level: "info",
+          scope: "booking.owner-notification",
+          message: "Brevo owner notification accepted.",
+          context: {
+            leadId,
+            messageId: notification.messageId ?? null,
+          },
+        }),
+      );
     }
 
     return Response.json(response);

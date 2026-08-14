@@ -1,17 +1,22 @@
 import type { NormalizedLead } from "./types";
 
 type OwnerNotificationResult =
-  | { ok: true; skipped?: false }
+  | { ok: true; skipped?: false; messageId?: string }
   | { ok: false; skipped: true; reason: string }
   | { ok: false; skipped?: false; reason: string };
 
-const RESEND_API_URL = "https://api.resend.com/emails";
+const BREVO_API_URL = "https://api.brevo.com/v3/smtp/email";
+const OWNER_NOTIFICATION_SENDER = {
+  email: "WadeHomeServices@yahoo.com",
+  name: "Wade Home Services",
+};
+const OWNER_NOTIFICATION_SUBJECT = "New Wade Home Services Booking Request";
 
 export function ownerNotificationConfigured() {
   return Boolean(
-    process.env.RESEND_API_KEY &&
+    process.env.BREVO_API_KEY &&
       process.env.OWNER_NOTIFICATION_EMAIL &&
-      process.env.OWNER_NOTIFICATION_FROM,
+      process.env.OWNER_APPROVAL_PORTAL_URL,
   );
 }
 
@@ -19,40 +24,36 @@ export async function sendOwnerNewLeadNotification(
   leadId: string,
   lead: NormalizedLead,
 ): Promise<OwnerNotificationResult> {
-  const apiKey = process.env.RESEND_API_KEY;
+  const apiKey = process.env.BREVO_API_KEY;
   const to = process.env.OWNER_NOTIFICATION_EMAIL;
-  const from = process.env.OWNER_NOTIFICATION_FROM;
-  if (!apiKey || !to || !from) {
+  const portalUrl = ownerApprovalPortalUrl();
+  if (!apiKey || !to || !portalUrl) {
     return {
       ok: false,
       skipped: true,
       reason:
-        "Owner notification email is not configured. Set RESEND_API_KEY, OWNER_NOTIFICATION_EMAIL, and OWNER_NOTIFICATION_FROM.",
+        "Owner notification email is not configured. Set BREVO_API_KEY, OWNER_NOTIFICATION_EMAIL, and OWNER_APPROVAL_PORTAL_URL.",
     };
   }
 
-  const portalUrl = ownerApprovalPortalUrl();
-  const response = await fetch(RESEND_API_URL, {
+  const response = await fetch(BREVO_API_URL, {
     method: "POST",
     headers: {
-      Authorization: `Bearer ${apiKey}`,
+      Accept: "application/json",
+      "api-key": apiKey,
       "Content-Type": "application/json",
-      "Idempotency-Key": `owner-new-lead-${leadId}`,
     },
-    body: JSON.stringify({
-      from,
-      to,
-      subject: `New Wade Home Services booking request: ${leadId}`,
-      html: ownerNotificationHtml(leadId, lead, portalUrl),
-      text: ownerNotificationText(leadId, lead, portalUrl),
-    }),
+    body: JSON.stringify(buildOwnerNotificationPayload(leadId, lead, portalUrl, to)),
   });
 
   if (!response.ok) {
-    return { ok: false, reason: `Owner notification email failed with ${response.status}.` };
+    return { ok: false, reason: await sanitizedBrevoError(response, apiKey) };
   }
 
-  return { ok: true };
+  const payload = await readBrevoJson(response);
+  const messageId =
+    typeof payload?.messageId === "string" ? payload.messageId : undefined;
+  return { ok: true, messageId };
 }
 
 export function ownerApprovalPortalUrl() {
@@ -68,6 +69,25 @@ export function ownerApprovalPortalUrl() {
   return "/owner";
 }
 
+export function buildOwnerNotificationPayload(
+  leadId: string,
+  lead: NormalizedLead,
+  portalUrl: string,
+  recipientEmail: string,
+) {
+  return {
+    sender: OWNER_NOTIFICATION_SENDER,
+    to: [{ email: recipientEmail }],
+    subject: OWNER_NOTIFICATION_SUBJECT,
+    htmlContent: ownerNotificationHtml(leadId, lead, portalUrl),
+    textContent: ownerNotificationText(leadId, lead, portalUrl),
+    tags: ["owner-booking-notification"],
+    headers: {
+      "X-Mailin-custom": `leadId:${leadId}`,
+    },
+  };
+}
+
 function ownerNotificationHtml(
   leadId: string,
   lead: NormalizedLead,
@@ -76,9 +96,14 @@ function ownerNotificationHtml(
   const rows = [
     ["Lead ID", leadId],
     ["Customer name", lead.customer.name],
-    ["Phone", lead.customer.phone],
-    ["Email", lead.normalizedEmail],
+    ["Customer email", lead.normalizedEmail],
+    ["Customer phone", lead.customer.phone],
+    ["Street address", lead.normalizedAddress.street],
+    ["City", lead.normalizedAddress.city],
+    ["State", lead.normalizedAddress.state],
+    ["ZIP", lead.normalizedAddress.zip],
     ["Service type(s)", lead.services.join(", ")],
+    ["Appointment type", lead.appointmentType],
     ["Requested date", new Date(lead.requestedSlot.start).toISOString().slice(0, 10)],
     ["Requested time", lead.requestedSlot.label],
   ];
@@ -121,9 +146,14 @@ function ownerNotificationText(
     "",
     `Lead ID: ${leadId}`,
     `Customer name: ${lead.customer.name}`,
-    `Phone: ${lead.customer.phone}`,
-    `Email: ${lead.normalizedEmail}`,
+    `Customer email: ${lead.normalizedEmail}`,
+    `Customer phone: ${lead.customer.phone}`,
+    `Street address: ${lead.normalizedAddress.street}`,
+    `City: ${lead.normalizedAddress.city}`,
+    `State: ${lead.normalizedAddress.state}`,
+    `ZIP: ${lead.normalizedAddress.zip}`,
     `Service type(s): ${lead.services.join(", ")}`,
+    `Appointment type: ${lead.appointmentType}`,
     `Project description: ${lead.projectDescription}`,
     `Requested date: ${new Date(lead.requestedSlot.start).toISOString().slice(0, 10)}`,
     `Requested time: ${lead.requestedSlot.label}`,
@@ -142,4 +172,30 @@ function escapeHtml(value: string) {
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&#39;");
+}
+
+async function sanitizedBrevoError(response: Response, apiKey: string) {
+  const payload = await readBrevoJson(response);
+  const code = typeof payload?.code === "string" ? payload.code : "";
+  const message = typeof payload?.message === "string" ? payload.message : "";
+  const details = [code, message]
+    .filter(Boolean)
+    .join(": ")
+    .replaceAll(apiKey, "[redacted]")
+    .slice(0, 240);
+  return details
+    ? `Brevo owner notification failed with ${response.status} (${details}).`
+    : `Brevo owner notification failed with ${response.status}.`;
+}
+
+async function readBrevoJson(response: Response) {
+  try {
+    return (await response.json()) as {
+      code?: unknown;
+      message?: unknown;
+      messageId?: unknown;
+    };
+  } catch {
+    return null;
+  }
 }
