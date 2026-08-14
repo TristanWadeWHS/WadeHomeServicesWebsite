@@ -1,7 +1,7 @@
 import { approveLead } from "@/app/lib/booking/google";
 import { isOwnerAuthorized, isSameOriginRequest } from "@/app/lib/booking/ownerAuth";
 import { jsonError, logServerError } from "@/app/lib/booking/responses";
-import { clientIp, rateLimit } from "@/app/lib/booking/security";
+import { clientIp, rateLimit, requestBodyWithinLimit } from "@/app/lib/booking/security";
 
 export const runtime = "nodejs";
 
@@ -9,6 +9,7 @@ export async function POST(request: Request) {
   const ip = clientIp(request);
   const limit = rateLimit(`owner-approve:${ip}`, 20, 10 * 60 * 1000);
   if (!limit.ok) return jsonError("Too many approval attempts.", 429);
+  if (!requestBodyWithinLimit(request, 10 * 1024)) return jsonError("Request is too large.", 413);
 
   const form = await request.formData();
   const leadId = String(form.get("leadId") ?? "");

@@ -8,7 +8,7 @@ import {
 import type { BusyWindow } from "./scheduling";
 import { isSlotStillAvailable } from "./scheduling";
 import type { NormalizedLead, OwnerDecisionResult, SheetLead } from "./types";
-import { mapLeadToColumns } from "./validation";
+import { escapeSheetCell, mapLeadToColumns } from "./validation";
 
 type GoogleToken = {
   accessToken: string;
@@ -298,7 +298,7 @@ async function updateLeadColumns(lead: SheetLead, values: Record<string, string>
   const current = leadToRow(headers, lead);
   for (const [header, value] of Object.entries(values)) {
     const index = headers.indexOf(header);
-    if (index >= 0) current[index] = value;
+    if (index >= 0) current[index] = escapeSheetCell(value);
   }
 
   const response = await fetch(

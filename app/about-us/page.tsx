@@ -33,7 +33,7 @@ export default function AboutUs() {
                 alt="Wade Home Services owner at a project site"
                 width={1086}
                 height={1448}
-                sizes="96px"
+                sizes="(max-width: 560px) 100vw, 190px"
                 priority
               />
             </div>
@@ -50,7 +50,7 @@ export default function AboutUs() {
                 alt="Maximus Wade, Chief Happiness Officer at Wade Home Services"
                 width={565}
                 height={800}
-                sizes="96px"
+                sizes="(max-width: 560px) 100vw, 190px"
               />
             </div>
             <div className="team-banner__body">

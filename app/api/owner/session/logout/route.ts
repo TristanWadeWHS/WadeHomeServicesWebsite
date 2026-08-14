@@ -13,10 +13,10 @@ export const runtime = "nodejs";
 
 export async function POST(request: Request) {
   if (!isSameOriginRequest(request)) {
-    return NextResponse.redirect(new URL("/owner/approvals", request.url), 303);
+    return NextResponse.redirect(new URL("/owner", request.url), 303);
   }
   revokeOwnerSession(getOwnerSessionFromRequest(request));
-  const response = NextResponse.redirect(new URL("/owner/approvals", request.url), 303);
+  const response = NextResponse.redirect(new URL("/owner", request.url), 303);
   response.cookies.set(OWNER_SESSION_COOKIE, "", clearedOwnerSessionCookieOptions());
   response.cookies.set(
     OWNER_SESSION_ACTIVE_COOKIE,
