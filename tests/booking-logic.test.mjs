@@ -288,7 +288,7 @@ test("completion uses stored owner and does not let field manager overwrite it",
   assert.equal(clientSource.includes('owner: hasStoredOwner ? "" : fallbackOwner'), true);
   assert.equal(routeSource.includes('form.get("owner")'), true);
   assert.equal(googleSource.includes("const existingOwner = lead.businessOwner.trim()"), true);
-  assert.equal(googleSource.includes("const ownerUpdate = existingOwner ? {} : { Owner: businessOwner }"), true);
+  assert.match(googleSource, /const ownerUpdate(?:: Record<string, string>)? = existingOwner \? \{\} : \{ Owner: businessOwner \}/);
   assert.equal(googleSource.includes("const leadForHistorical = { ...lead, businessOwner }"), true);
 });
 
