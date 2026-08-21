@@ -1,12 +1,14 @@
 "use client";
 
-import { useState } from "react";
+import { type KeyboardEvent, useState } from "react";
 import {
   APPROVED_STATUS,
+  CLOSED_STATUS,
   CONFLICT_STATUS,
   COMPLETED_STATUS,
   DECLINED_STATUS,
   IN_PROGRESS_STATUS,
+  LEAD_STATUS,
 } from "../lib/booking/config";
 import { ROLE_OWNER, type OperationsUser } from "../lib/booking/ownerAuth";
 import type { OwnerDecisionResult, SheetLead } from "../lib/booking/types";
@@ -27,6 +29,8 @@ type BusyAction = {
   action: string;
 } | null;
 
+type PortalTab = "requests" | "active";
+
 type OperationsResult = {
   ok: boolean;
   message?: string;
@@ -44,16 +48,41 @@ export function OperationsPortalClient({
   const [notice, setNotice] = useState<Notice | null>(null);
   const [busyAction, setBusyAction] = useState<BusyAction>(null);
   const isOwner = user.role === ROLE_OWNER;
+  const [activeTab, setActiveTab] = useState<PortalTab>(isOwner ? "requests" : "active");
+  const availableTabs: PortalTab[] = isOwner ? ["requests", "active"] : ["active"];
+
+  function handleTabKeyDown(event: KeyboardEvent<HTMLButtonElement>) {
+    if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
+    event.preventDefault();
+    const currentIndex = availableTabs.indexOf(activeTab);
+    const nextIndex =
+      event.key === "Home"
+        ? 0
+        : event.key === "End"
+          ? availableTabs.length - 1
+          : event.key === "ArrowRight"
+            ? (currentIndex + 1) % availableTabs.length
+            : (currentIndex - 1 + availableTabs.length) % availableTabs.length;
+    setActiveTab(availableTabs[nextIndex]);
+  }
 
   function upsertLead(updatedLead: SheetLead) {
-    setRequestLeads((current) =>
-      current.map((lead) => (lead.leadId === updatedLead.leadId ? updatedLead : lead)),
-    );
+    setRequestLeads((current) => {
+      const isRequest = [LEAD_STATUS, CONFLICT_STATUS].includes(updatedLead.status);
+      const exists = current.some((lead) => lead.leadId === updatedLead.leadId);
+      if (!isRequest) {
+        return current.filter((lead) => lead.leadId !== updatedLead.leadId);
+      }
+      if (exists) {
+        return current.map((lead) => (lead.leadId === updatedLead.leadId ? updatedLead : lead));
+      }
+      return [updatedLead, ...current];
+    });
     setJobLeads((current) => {
       const isActive = [APPROVED_STATUS, IN_PROGRESS_STATUS].includes(updatedLead.status);
       const exists = current.some((lead) => lead.leadId === updatedLead.leadId);
       if (!isActive) {
-        return current.map((lead) => (lead.leadId === updatedLead.leadId ? updatedLead : lead));
+        return current.filter((lead) => lead.leadId !== updatedLead.leadId);
       }
       if (exists) {
         return current.map((lead) => (lead.leadId === updatedLead.leadId ? updatedLead : lead));
@@ -64,7 +93,7 @@ export function OperationsPortalClient({
 
   async function decideLead(
     leadId: string,
-    action: "approve" | "decline",
+    action: "approve" | "decline" | "close",
     values: Record<string, string>,
   ) {
     setNotice(null);
@@ -90,11 +119,9 @@ export function OperationsPortalClient({
 
       setNotice({
         tone: "success",
-        message:
-          action === "approve"
-            ? "Appointment approved and added to Google Calendar."
-            : "Request declined.",
+        message: decisionSuccessMessage(action),
       });
+      if (action === "approve") setActiveTab("active");
     } catch {
       setNotice({ tone: "error", message: "This request could not be updated. Please try again." });
     } finally {
@@ -163,8 +190,37 @@ export function OperationsPortalClient({
         </div>
       ) : null}
 
-      {isOwner ? (
-        <section className="operations-section">
+      <div className="operations-tabs" role="tablist" aria-label="Operations workflows">
+        {isOwner ? (
+          <button
+            aria-controls="operations-panel-requests"
+            aria-selected={activeTab === "requests"}
+            className="operations-tab"
+            id="operations-tab-requests"
+            onKeyDown={handleTabKeyDown}
+            onClick={() => setActiveTab("requests")}
+            role="tab"
+            type="button"
+          >
+            Requests
+          </button>
+        ) : null}
+        <button
+          aria-controls="operations-panel-active"
+          aria-selected={activeTab === "active"}
+          className="operations-tab"
+          id="operations-tab-active"
+          onKeyDown={handleTabKeyDown}
+          onClick={() => setActiveTab("active")}
+          role="tab"
+          type="button"
+        >
+          Active Jobs
+        </button>
+      </div>
+
+      {isOwner && activeTab === "requests" ? (
+        <section className="operations-section" id="operations-panel-requests" role="tabpanel" aria-labelledby="operations-tab-requests">
           <div className="operations-section__header">
             <h3>Requests</h3>
             <p>Approve with an approved amount, or decline requests that cannot be served.</p>
@@ -186,7 +242,8 @@ export function OperationsPortalClient({
         </section>
       ) : null}
 
-      <section className="operations-section">
+      {activeTab === "active" ? (
+      <section className="operations-section" id="operations-panel-active" role="tabpanel" aria-labelledby="operations-tab-active">
         <div className="operations-section__header">
           <h3>Active Jobs</h3>
           <p>Track scheduled work, field progress, and completion closeout.</p>
@@ -206,6 +263,7 @@ export function OperationsPortalClient({
           />
         ))}
       </section>
+      ) : null}
     </div>
   );
 }
@@ -217,14 +275,19 @@ function RequestCard({
 }: {
   busyAction: BusyAction;
   lead: SheetLead;
-  onDecide: (leadId: string, action: "approve" | "decline", values: Record<string, string>) => Promise<void>;
+  onDecide: (leadId: string, action: "approve" | "decline" | "close", values: Record<string, string>) => Promise<void>;
 }) {
   const [approvedAmount, setApprovedAmount] = useState(lead.approvedAmount || "");
+  const [businessOwner, setBusinessOwner] = useState(lead.businessOwner || "");
   const [declineReason, setDeclineReason] = useState("Requested time unavailable");
+  const [closeReason, setCloseReason] = useState("No response");
+  const [closeNote, setCloseNote] = useState("");
   const isBusy = busyAction !== null;
   const isApproveBusy = busyAction?.leadId === lead.leadId && busyAction.action === "approve";
   const isDeclineBusy = busyAction?.leadId === lead.leadId && busyAction.action === "decline";
-  const isFinal = [APPROVED_STATUS, DECLINED_STATUS, CONFLICT_STATUS].includes(lead.status);
+  const isCloseBusy = busyAction?.leadId === lead.leadId && busyAction.action === "close";
+  const isFinal = [APPROVED_STATUS, DECLINED_STATUS, CLOSED_STATUS].includes(lead.status);
+  const canApprove = lead.status === LEAD_STATUS;
 
   return (
     <article className="owner-lead">
@@ -239,27 +302,42 @@ function RequestCard({
 
       {isFinal ? null : (
         <div className="owner-actions operations-actions">
-          <label className="field operations-amount">
-            <span>Approved Amount</span>
-            <input
-              disabled={isBusy}
-              inputMode="decimal"
-              min="0"
-              onChange={(event) => setApprovedAmount(event.target.value)}
-              placeholder="0.00"
-              step="0.01"
-              type="number"
-              value={approvedAmount}
-            />
-          </label>
-          <button
-            className="button button--primary"
-            disabled={isBusy}
-            onClick={() => onDecide(lead.leadId, "approve", { approvedAmount })}
-            type="button"
-          >
-            {isApproveBusy ? "Approving..." : "Approve"}
-          </button>
+          {canApprove ? (
+            <div className="operations-approval-control">
+              <label className="field operations-amount">
+                <span>Approved Amount</span>
+                <input
+                  disabled={isBusy}
+                  inputMode="decimal"
+                  min="0"
+                  onChange={(event) => setApprovedAmount(event.target.value)}
+                  placeholder="0.00"
+                  step="0.01"
+                  type="number"
+                  value={approvedAmount}
+                />
+              </label>
+              <label className="field operations-amount">
+                <span>Owner</span>
+                <input
+                  disabled={isBusy}
+                  maxLength={120}
+                  onChange={(event) => setBusinessOwner(event.target.value)}
+                  placeholder="Business owner"
+                  type="text"
+                  value={businessOwner}
+                />
+              </label>
+              <button
+                className="button button--primary"
+                disabled={isBusy}
+                onClick={() => onDecide(lead.leadId, "approve", { approvedAmount, businessOwner })}
+                type="button"
+              >
+                {isApproveBusy ? "Approving..." : "Approve"}
+              </button>
+            </div>
+          ) : null}
 
           <div className="owner-decline-control">
             <label className="field">
@@ -283,6 +361,43 @@ function RequestCard({
               type="button"
             >
               {isDeclineBusy ? "Declining..." : "Decline"}
+            </button>
+          </div>
+
+          <div className="owner-decline-control">
+            <label className="field">
+              <span>Close reason</span>
+              <select
+                disabled={isBusy}
+                onChange={(event) => setCloseReason(event.target.value)}
+                value={closeReason}
+              >
+                <option>Customer cancelled</option>
+                <option>Unable to reschedule</option>
+                <option>Duplicate request</option>
+                <option>Test record</option>
+                <option>No response</option>
+                <option>Other</option>
+              </select>
+            </label>
+            <label className="field">
+              <span>Close note</span>
+              <input
+                disabled={isBusy}
+                maxLength={220}
+                onChange={(event) => setCloseNote(event.target.value)}
+                placeholder="Optional"
+                type="text"
+                value={closeNote}
+              />
+            </label>
+            <button
+              className="button button--ghost"
+              disabled={isBusy}
+              onClick={() => onDecide(lead.leadId, "close", { reason: closeReason, note: closeNote })}
+              type="button"
+            >
+              {isCloseBusy ? "Closing..." : "Close Request"}
             </button>
           </div>
         </div>
@@ -316,6 +431,7 @@ function JobCard({
       <LeadDetails lead={lead} />
       <dl className="owner-status-detail">
         <div><dt>Approved Amount</dt><dd>{lead.approvedAmount || "Not recorded"}</dd></div>
+        <div><dt>Owner</dt><dd>{lead.businessOwner || "Not recorded"}</dd></div>
         <div><dt>Calendar Event</dt><dd>{lead.calendarEventId || "Not recorded"}</dd></div>
         <div><dt>Completed At</dt><dd>{lead.completedAt || "Not completed"}</dd></div>
       </dl>
@@ -425,4 +541,10 @@ function friendlyError(payload: Awaited<ReturnType<typeof readJson>>) {
     return "This requested time is no longer available. Please contact the customer to choose another time.";
   }
   return message || "This update could not be completed. Please try again.";
+}
+
+function decisionSuccessMessage(action: "approve" | "decline" | "close") {
+  if (action === "approve") return "Appointment approved and added to Google Calendar.";
+  if (action === "close") return "Request closed.";
+  return "Request declined.";
 }

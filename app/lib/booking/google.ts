@@ -1,5 +1,6 @@
 import {
   APPROVED_STATUS,
+  CLOSED_STATUS,
   CONFLICT_STATUS,
   COMPLETED_STATUS,
   DECLINED_STATUS,
@@ -22,6 +23,11 @@ export type CloseoutInput = {
   projectCosts: string;
   distance?: string;
   notes?: string;
+};
+
+export type CloseRequestInput = {
+  reason: string;
+  note?: string;
 };
 
 export type JobStatusInput = typeof APPROVED_STATUS | typeof IN_PROGRESS_STATUS;
@@ -156,6 +162,7 @@ export async function getLeadById(leadId: string) {
 export async function approveLead(
   leadId: string,
   approvedAmountValue = "",
+  businessOwnerValue = "",
   approvedBy = "Owner",
 ): Promise<OwnerDecisionResult> {
   const lead = await getLeadById(leadId);
@@ -173,6 +180,8 @@ export async function approveLead(
   }
   const approvedAmount = parseNonNegativeMoney(approvedAmountValue, "Approved amount");
   if (!approvedAmount.ok) return { ok: false, message: approvedAmount.message, lead };
+  const businessOwner = sanitizeRequiredText(businessOwnerValue, "Owner", 120);
+  if (!businessOwner.ok) return { ok: false, message: businessOwner.message, lead };
 
   const slot = leadToRequestedSlot(lead);
   if (!slot) return { ok: false, message: "Lead requested time could not be read.", lead };
@@ -202,6 +211,7 @@ export async function approveLead(
   const updated = await updateLeadColumns(lead, {
     Status: APPROVED_STATUS,
     "Approved Amount": formatMoney(approvedAmount.value),
+    Owner: businessOwner.value,
     "Operational Status": APPROVED_STATUS,
     "Approval / Decision Timestamp": timestamp,
     "Google Calendar Event ID": eventId,
@@ -210,7 +220,7 @@ export async function approveLead(
     "Email Status": emailStatus,
     "Audit Trail": appendAuditEntry(
       lead.auditTrail,
-      `${approvedBy} approved request for ${formatMoney(approvedAmount.value)}.`,
+      `${approvedBy} approved request for ${formatMoney(approvedAmount.value)}. Owner: ${businessOwner.value}.`,
       timestamp,
     ),
     "Internal Notes": appendInternalNote(
@@ -264,6 +274,44 @@ export async function declineLead(
     lead: updated,
     calendarEventCreated: false,
     emailStatus,
+  };
+}
+
+export async function closeLead(
+  leadId: string,
+  input: CloseRequestInput,
+  closedBy = "Owner",
+): Promise<OwnerDecisionResult> {
+  const lead = await getLeadById(leadId);
+  if (!lead) return { ok: false, message: "Lead not found." };
+  if (lead.status !== LEAD_STATUS && lead.status !== CONFLICT_STATUS) {
+    return { ok: false, message: `Lead is ${lead.status}.`, lead };
+  }
+
+  const reason = sanitizeCloseReason(input.reason, input.note);
+  const timestamp = new Date().toISOString();
+  const updated = await updateLeadColumns(lead, {
+    Status: CLOSED_STATUS,
+    "Operational Status": CLOSED_STATUS,
+    "Closed At": timestamp,
+    "Closed By": closedBy,
+    "Close Reason": reason,
+    "Audit Trail": appendAuditEntry(
+      lead.auditTrail,
+      `${closedBy} closed request. Old status: ${lead.status}. New status: ${CLOSED_STATUS}. Reason: ${reason}.`,
+      timestamp,
+    ),
+    "Internal Notes": appendInternalNote(
+      lead.internalNotes,
+      `Request closed by ${closedBy}: ${reason}`,
+    ),
+  });
+
+  return {
+    ok: true,
+    lead: updated,
+    calendarEventCreated: false,
+    emailStatus: lead.emailStatus || emailNeedsConfigurationStatus(),
   };
 }
 
@@ -701,12 +749,16 @@ function sheetRowToLead(
     declineReason: value("Decline Reason"),
     emailStatus: value("Email Status"),
     approvedAmount: value("Approved Amount"),
+    businessOwner: value("Owner"),
     operationalStatus: value("Operational Status"),
     completedAt: value("Completed At"),
     completionFinalAmount: value("Completion Final Amount"),
     projectCosts: value("Project Costs"),
     distance: value("Distance"),
     completionNotes: value("Completion Notes"),
+    closedAt: value("Closed At"),
+    closedBy: value("Closed By"),
+    closeReason: value("Close Reason"),
     historicalTransferStatus: value("Historical Transfer Status"),
     historicalTransferTimestamp: value("Historical Transfer Timestamp"),
     auditTrail: value("Audit Trail"),
@@ -741,12 +793,16 @@ function leadToRow(headers: readonly string[], lead: SheetLead) {
     "Decline Reason": lead.declineReason,
     "Email Status": lead.emailStatus,
     "Approved Amount": lead.approvedAmount,
+    Owner: lead.businessOwner,
     "Operational Status": lead.operationalStatus,
     "Completed At": lead.completedAt,
     "Completion Final Amount": lead.completionFinalAmount,
     "Project Costs": lead.projectCosts,
     Distance: lead.distance,
     "Completion Notes": lead.completionNotes,
+    "Closed At": lead.closedAt,
+    "Closed By": lead.closedBy,
+    "Close Reason": lead.closeReason,
     "Historical Transfer Status": lead.historicalTransferStatus,
     "Historical Transfer Timestamp": lead.historicalTransferTimestamp,
     "Audit Trail": lead.auditTrail,
@@ -836,6 +892,27 @@ function sanitizeDecisionReason(reason: string) {
   return reason.replace(/\s+/g, " ").trim().slice(0, 300) || "No reason provided";
 }
 
+function sanitizeCloseReason(reason: string, note = "") {
+  const base = sanitizeDecisionReason(reason);
+  const extra = note.replace(/\s+/g, " ").trim().slice(0, 220);
+  return extra ? `${base}: ${extra}` : base;
+}
+
+function sanitizeRequiredText(value: string, label: string, maxLength: number): {
+  ok: true;
+  value: string;
+} | {
+  ok: false;
+  message: string;
+} {
+  const normalized = value.replace(/\s+/g, " ").trim();
+  if (!normalized) return { ok: false, message: `${label} is required.` };
+  if (normalized.length > maxLength) {
+    return { ok: false, message: `${label} must be ${maxLength} characters or fewer.` };
+  }
+  return { ok: true, value: normalized };
+}
+
 function emailNeedsConfigurationStatus() {
   return "Needs configuration: no email provider configured";
 }
@@ -919,7 +996,7 @@ export function buildHistoricalRow(
     Date: completedAt.slice(0, 10),
     "Job Type": lead.services,
     Amount: formatMoney(closeout.finalAmount),
-    Owner: completedBy,
+    Owner: lead.businessOwner || completedBy,
     City: lead.city,
     Payment_Expense: "Payment",
     Distance: closeout.distance === null ? "" : String(closeout.distance),

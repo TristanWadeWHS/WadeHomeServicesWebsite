@@ -1247,6 +1247,36 @@ p {
   margin: 0;
 }
 
+.operations-tabs {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-start;
+}
+
+.operations-tab {
+  background: rgba(246, 245, 240, 0.92);
+  border: 1px solid rgba(31, 46, 39, 0.14);
+  border-radius: 8px;
+  color: var(--charcoal);
+  cursor: pointer;
+  font: inherit;
+  font-weight: 900;
+  padding: 10px 14px;
+}
+
+.operations-tab[aria-selected="true"] {
+  background: var(--forest);
+  border-color: var(--forest);
+  color: white;
+}
+
+.operations-tab:focus-visible {
+  outline: 3px solid rgba(210, 180, 106, 0.75);
+  outline-offset: 3px;
+}
+
 .operations-section__header p {
   margin: 6px 0 0;
   max-width: 620px;
@@ -1260,7 +1290,17 @@ p {
 }
 
 .operations-actions {
-  grid-template-columns: minmax(180px, 220px) auto minmax(240px, 1fr);
+  grid-template-columns: minmax(260px, 1fr) minmax(240px, 0.8fr) minmax(260px, 0.8fr);
+}
+
+.operations-approval-control {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(2, minmax(130px, 1fr));
+}
+
+.operations-approval-control .button {
+  grid-column: 1 / -1;
 }
 
 .operations-amount {
@@ -1362,6 +1402,7 @@ p {
   }
 
   .operations-actions,
+  .operations-approval-control,
   .operations-closeout {
     grid-template-columns: 1fr;
   }

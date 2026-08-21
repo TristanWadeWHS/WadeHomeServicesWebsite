@@ -79,12 +79,16 @@ export type SheetLead = {
   declineReason: string;
   emailStatus: string;
   approvedAmount: string;
+  businessOwner: string;
   operationalStatus: string;
   completedAt: string;
   completionFinalAmount: string;
   projectCosts: string;
   distance: string;
   completionNotes: string;
+  closedAt: string;
+  closedBy: string;
+  closeReason: string;
   historicalTransferStatus: string;
   historicalTransferTimestamp: string;
   auditTrail: string;

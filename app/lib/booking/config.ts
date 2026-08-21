@@ -45,12 +45,16 @@ export const PHASE_3_SHEET_COLUMNS = [
 
 export const OPERATIONS_SHEET_COLUMNS = [
   "Approved Amount",
+  "Owner",
   "Operational Status",
   "Completed At",
   "Completion Final Amount",
   "Project Costs",
   "Distance",
   "Completion Notes",
+  "Closed At",
+  "Closed By",
+  "Close Reason",
   "Historical Transfer Status",
   "Historical Transfer Timestamp",
   "Audit Trail",
@@ -68,6 +72,7 @@ export const IN_PROGRESS_STATUS = "In Progress";
 export const COMPLETED_STATUS = "Completed";
 export const DECLINED_STATUS = "Declined";
 export const CONFLICT_STATUS = "Pending Approval - Time Conflict";
+export const CLOSED_STATUS = "Closed";
 
 export type ServiceOption = (typeof SERVICE_OPTIONS)[number];
 export type AppointmentType = (typeof APPOINTMENT_TYPES)[number];

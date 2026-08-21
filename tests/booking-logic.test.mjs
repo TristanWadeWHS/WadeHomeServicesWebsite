@@ -1,7 +1,12 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
-import { LEAD_SOURCE, LEAD_STATUS, REQUIRED_SHEET_COLUMNS } from "../app/lib/booking/config.ts";
+import {
+  CLOSED_STATUS,
+  LEAD_SOURCE,
+  LEAD_STATUS,
+  REQUIRED_SHEET_COLUMNS,
+} from "../app/lib/booking/config.ts";
 import {
   buildCalendarEventResource,
   buildHistoricalRow,
@@ -236,6 +241,61 @@ test("legacy owner approvals route redirects to canonical owner portal", () => {
   assert.equal(source.includes("?token="), false);
 });
 
+test("operations portal uses owner-only workflow tabs", () => {
+  const clientSource = readFileSync("app/login/OperationsPortalClient.tsx", "utf8");
+
+  assert.equal(clientSource.includes('role="tablist"'), true);
+  assert.equal(clientSource.includes('role="tab"'), true);
+  assert.equal(clientSource.includes("Requests"), true);
+  assert.equal(clientSource.includes("Active Jobs"), true);
+  assert.equal(clientSource.includes('useState<PortalTab>(isOwner ? "requests" : "active")'), true);
+  assert.equal(clientSource.includes('activeTab === "requests"'), true);
+  assert.equal(clientSource.includes('activeTab === "active"'), true);
+  assert.equal(clientSource.includes("isOwner ? ("), true);
+});
+
+test("operations Sheet schema includes owner and close metadata without duplicate owner columns", () => {
+  assert.equal(REQUIRED_SHEET_COLUMNS.includes("Owner"), true);
+  assert.equal(REQUIRED_SHEET_COLUMNS.filter((column) => column === "Owner").length, 1);
+  assert.equal(REQUIRED_SHEET_COLUMNS.includes("Closed At"), true);
+  assert.equal(REQUIRED_SHEET_COLUMNS.includes("Closed By"), true);
+  assert.equal(REQUIRED_SHEET_COLUMNS.includes("Close Reason"), true);
+  assert.equal(CLOSED_STATUS, "Closed");
+});
+
+test("approval requires approved amount and business owner in UI and server path", () => {
+  const clientSource = readFileSync("app/login/OperationsPortalClient.tsx", "utf8");
+  const routeSource = readFileSync("app/api/owner/booking/approve/route.ts", "utf8");
+  const googleSource = readFileSync("app/lib/booking/google.ts", "utf8");
+
+  assert.equal(clientSource.includes("businessOwner"), true);
+  assert.equal(clientSource.includes("<span>Owner</span>"), true);
+  assert.equal(routeSource.includes('form.get("businessOwner")'), true);
+  assert.equal(routeSource.includes("approvedAmount,"), true);
+  assert.equal(routeSource.includes("businessOwner,"), true);
+  assert.equal(googleSource.includes('sanitizeRequiredText(businessOwnerValue, "Owner", 120)'), true);
+  assert.equal(googleSource.includes("Owner: businessOwner.value"), true);
+  assert.equal(googleSource.includes("Owner: ${businessOwner.value}"), true);
+});
+
+test("close request workflow is owner-only and terminal", () => {
+  const clientSource = readFileSync("app/login/OperationsPortalClient.tsx", "utf8");
+  const routeSource = readFileSync("app/api/owner/booking/close/route.ts", "utf8");
+  const googleSource = readFileSync("app/lib/booking/google.ts", "utf8");
+
+  assert.equal(clientSource.includes("Close Request"), true);
+  assert.equal(clientSource.includes("Customer cancelled"), true);
+  assert.equal(clientSource.includes("Test record"), true);
+  assert.equal(routeSource.includes("requireRole(request, ROLE_OWNER)"), true);
+  assert.equal(routeSource.includes("closeLead"), true);
+  assert.equal(googleSource.includes("Status: CLOSED_STATUS"), true);
+  assert.equal(googleSource.includes('"Closed At": timestamp'), true);
+  assert.equal(googleSource.includes('"Closed By": closedBy'), true);
+  assert.equal(googleSource.includes('"Close Reason": reason'), true);
+  assert.equal(googleSource.includes("calendarEventCreated: false"), true);
+  assert.equal(googleSource.includes("lead.status !== LEAD_STATUS && lead.status !== CONFLICT_STATUS"), true);
+});
+
 test("operations sessions support owner and field manager roles without exposing tokens", () => {
   const previous = {
     owner: process.env.OWNER_APPROVAL_TOKEN,
@@ -314,6 +374,7 @@ test("historical completion row maps financial fields without mutating source he
     headers,
   );
   assert.equal(row[headers.indexOf("Date")], "2026-08-20");
+  assert.equal(row[headers.indexOf("Owner")], "Tristan Wade");
   assert.equal(row[headers.indexOf("Amount")], "500.00");
   assert.equal(row[headers.indexOf("Project Costs")], "125.00");
   assert.equal(row[headers.indexOf("ROI")], "300.00%");
@@ -745,12 +806,16 @@ function sheetLeadFixture(overrides = {}) {
     declineReason: "",
     emailStatus: "",
     approvedAmount: "",
+    businessOwner: "Tristan Wade",
     operationalStatus: "",
     completedAt: "",
     completionFinalAmount: "",
     projectCosts: "",
     distance: "",
     completionNotes: "",
+    closedAt: "",
+    closedBy: "",
+    closeReason: "",
     historicalTransferStatus: "",
     historicalTransferTimestamp: "",
     auditTrail: "",
