@@ -278,6 +278,32 @@ test("approval requires approved amount and business owner in UI and server path
   assert.equal(googleSource.includes("Owner: ${businessOwner.value}"), true);
 });
 
+test("completion uses stored owner and does not let field manager overwrite it", () => {
+  const clientSource = readFileSync("app/login/OperationsPortalClient.tsx", "utf8");
+  const routeSource = readFileSync("app/api/operations/job/complete/route.ts", "utf8");
+  const googleSource = readFileSync("app/lib/booking/google.ts", "utf8");
+
+  assert.equal(clientSource.includes("hasStoredOwner"), true);
+  assert.equal(clientSource.includes("operations-owner-context"), true);
+  assert.equal(clientSource.includes('owner: hasStoredOwner ? "" : fallbackOwner'), true);
+  assert.equal(routeSource.includes('form.get("owner")'), true);
+  assert.equal(googleSource.includes("const existingOwner = lead.businessOwner.trim()"), true);
+  assert.equal(googleSource.includes("const ownerUpdate = existingOwner ? {} : { Owner: businessOwner }"), true);
+  assert.equal(googleSource.includes("const leadForHistorical = { ...lead, businessOwner }"), true);
+});
+
+test("legacy active jobs require fallback owner before historical transfer", () => {
+  const clientSource = readFileSync("app/login/OperationsPortalClient.tsx", "utf8");
+  const googleSource = readFileSync("app/lib/booking/google.ts", "utf8");
+
+  assert.equal(clientSource.includes("setFallbackOwner"), true);
+  assert.equal(clientSource.includes("required"), true);
+  assert.equal(googleSource.includes('sanitizeRequiredText(input.owner ?? "", "Owner", 120)'), true);
+  assert.equal(googleSource.includes('if (fallbackOwner?.ok === false)'), true);
+  assert.equal(googleSource.includes("...ownerUpdate"), true);
+  assert.equal(googleSource.includes("Owner: ${businessOwner}"), true);
+});
+
 test("close request workflow is owner-only and terminal", () => {
   const clientSource = readFileSync("app/login/OperationsPortalClient.tsx", "utf8");
   const routeSource = readFileSync("app/api/owner/booking/close/route.ts", "utf8");
@@ -381,6 +407,31 @@ test("historical completion row maps financial fields without mutating source he
   assert.equal(row[headers.indexOf("Net Profit")], "375.00");
   assert.equal(row[headers.indexOf("Completed")], "1");
   assert.match(row[headers.indexOf("Notes")], /Lead ID: WHS-20260812-TEST01/);
+});
+
+test("historical completion row supports legacy fallback owner without fabricating approved amount", () => {
+  const headers = ["Amount", "Owner", "Completed"];
+  const legacyLead = {
+    ...sheetLeadFixture(),
+    approvedAmount: "",
+    businessOwner: "Tristan Wade",
+  };
+  const row = buildHistoricalRow(
+    legacyLead,
+    {
+      finalAmount: 625,
+      projectCosts: 250,
+      distance: null,
+      notes: "Legacy owner fallback.",
+    },
+    "2026-08-20T19:30:00.000Z",
+    "Field Manager",
+    headers,
+  );
+
+  assert.equal(row[headers.indexOf("Amount")], "625.00");
+  assert.equal(row[headers.indexOf("Owner")], "Tristan Wade");
+  assert.equal(row[headers.indexOf("Completed")], "1");
 });
 
 test("JSON body reader enforces size limits before validation", async () => {

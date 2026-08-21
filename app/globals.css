@@ -1309,7 +1309,29 @@ p {
 
 .operations-closeout {
   align-items: end;
-  grid-template-columns: repeat(3, minmax(140px, 1fr)) minmax(220px, 1.4fr) auto;
+  grid-template-columns: repeat(4, minmax(130px, 1fr)) minmax(220px, 1.4fr) auto;
+}
+
+.operations-owner-context {
+  background: rgba(31, 75, 58, 0.08);
+  border: 1px solid rgba(31, 75, 58, 0.14);
+  border-radius: 8px;
+  color: var(--charcoal);
+  display: grid;
+  gap: 4px;
+  min-height: 44px;
+  padding: 10px 12px;
+}
+
+.operations-owner-context span {
+  color: rgba(44, 48, 45, 0.68);
+  font-size: 0.76rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.operations-owner-context strong {
+  font-size: 0.95rem;
 }
 
 .operations-notes textarea {

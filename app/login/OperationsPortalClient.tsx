@@ -420,6 +420,8 @@ function JobCard({
   const [projectCosts, setProjectCosts] = useState(lead.projectCosts || "");
   const [distance, setDistance] = useState(lead.distance || "");
   const [notes, setNotes] = useState(lead.completionNotes || "");
+  const [fallbackOwner, setFallbackOwner] = useState("");
+  const hasStoredOwner = Boolean(lead.businessOwner.trim());
   const isBusy = busyAction !== null;
   const isCompleteBusy = busyAction?.leadId === lead.leadId && busyAction.action === "complete";
   const isStatusBusy = busyAction?.leadId === lead.leadId && busyAction.action === "status";
@@ -473,6 +475,25 @@ function JobCard({
               <span>Distance</span>
               <input disabled={isBusy} inputMode="decimal" min="0" onChange={(event) => setDistance(event.target.value)} step="0.1" type="number" value={distance} />
             </label>
+            {hasStoredOwner ? (
+              <div className="operations-owner-context">
+                <span>Owner</span>
+                <strong>{lead.businessOwner}</strong>
+              </div>
+            ) : (
+              <label className="field">
+                <span>Owner</span>
+                <input
+                  disabled={isBusy}
+                  maxLength={120}
+                  onChange={(event) => setFallbackOwner(event.target.value)}
+                  placeholder="Business owner"
+                  required
+                  type="text"
+                  value={fallbackOwner}
+                />
+              </label>
+            )}
             <label className="field operations-notes">
               <span>Completion Notes</span>
               <textarea disabled={isBusy} onChange={(event) => setNotes(event.target.value)} value={notes} />
@@ -480,7 +501,7 @@ function JobCard({
             <button
               className="button button--primary"
               disabled={isBusy}
-              onClick={() => onMutate(lead.leadId, "complete", { finalAmount, projectCosts, distance, notes })}
+              onClick={() => onMutate(lead.leadId, "complete", { finalAmount, projectCosts, distance, notes, owner: hasStoredOwner ? "" : fallbackOwner })}
               type="button"
             >
               {isCompleteBusy ? "Completing..." : "Complete Job"}

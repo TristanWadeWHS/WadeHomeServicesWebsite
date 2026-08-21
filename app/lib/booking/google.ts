@@ -23,6 +23,7 @@ export type CloseoutInput = {
   projectCosts: string;
   distance?: string;
   notes?: string;
+  owner?: string;
 };
 
 export type CloseRequestInput = {
@@ -363,13 +364,20 @@ export async function completeJob(
 
   const closeout = validateCloseout(input);
   if (!closeout.ok) return { ok: false, message: closeout.message, lead };
+  const existingOwner = lead.businessOwner.trim();
+  const fallbackOwner = existingOwner ? null : sanitizeRequiredText(input.owner ?? "", "Owner", 120);
+  if (fallbackOwner?.ok === false) return { ok: false, message: fallbackOwner.message, lead };
+  const businessOwner = existingOwner || fallbackOwner?.value || "";
+  const ownerUpdate: Record<string, string> = existingOwner ? {} : { Owner: businessOwner };
+  const leadForHistorical = { ...lead, businessOwner };
 
   const timestamp = new Date().toISOString();
   if (lead.historicalTransferStatus !== HISTORICAL_TRANSFER_COMPLETE) {
-    await appendHistoricalJob(lead, closeout.value, timestamp, completedBy);
+    await appendHistoricalJob(leadForHistorical, closeout.value, timestamp, completedBy);
   }
 
   const updated = await updateLeadColumns(lead, {
+    ...ownerUpdate,
     Status: COMPLETED_STATUS,
     "Operational Status": COMPLETED_STATUS,
     "Completed At": timestamp,
@@ -381,7 +389,7 @@ export async function completeJob(
     "Historical Transfer Timestamp": timestamp,
     "Audit Trail": appendAuditEntry(
       lead.auditTrail,
-      `${completedBy} completed job and transferred historical record.`,
+      `${completedBy} completed job and transferred historical record. Owner: ${businessOwner}.`,
       timestamp,
     ),
   });

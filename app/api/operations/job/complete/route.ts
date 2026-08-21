@@ -31,6 +31,7 @@ export async function POST(request: Request) {
         projectCosts: String(form.get("projectCosts") ?? ""),
         distance: String(form.get("distance") ?? ""),
         notes: String(form.get("notes") ?? ""),
+        owner: String(form.get("owner") ?? ""),
       },
       authorization.user.label,
     );
