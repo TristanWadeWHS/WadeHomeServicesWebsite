@@ -1,7 +1,10 @@
 import { jsonError, logServerError } from "@/app/lib/booking/responses";
 import { clientIp, rateLimit } from "@/app/lib/booking/security";
 import { storePhoto } from "@/app/lib/booking/storage";
-import { MAX_PHOTO_COUNT } from "@/app/lib/booking/validation";
+import {
+  MAX_PHOTO_AGGREGATE_SIZE_BYTES,
+  MAX_PHOTO_COUNT,
+} from "@/app/lib/booking/validation";
 
 export const runtime = "nodejs";
 
@@ -11,7 +14,7 @@ export async function POST(request: Request) {
   if (!limit.ok) return jsonError("Too many photo upload attempts. Try again soon.", 429);
 
   const length = Number(request.headers.get("content-length") ?? "0");
-  if (length > 160 * 1024 * 1024) {
+  if (length > MAX_PHOTO_AGGREGATE_SIZE_BYTES + 1024 * 1024) {
     return jsonError("The selected photos are too large.", 413);
   }
 
@@ -24,6 +27,10 @@ export async function POST(request: Request) {
     if (files.length < 1) return jsonError("At least one photo is required.");
     if (files.length > MAX_PHOTO_COUNT) {
       return jsonError(`Upload no more than ${MAX_PHOTO_COUNT} photos.`);
+    }
+    const aggregateSize = files.reduce((total, file) => total + file.size, 0);
+    if (aggregateSize > MAX_PHOTO_AGGREGATE_SIZE_BYTES) {
+      return jsonError("Upload no more than 50 MB of photos per request.", 413);
     }
 
     const stored = [];

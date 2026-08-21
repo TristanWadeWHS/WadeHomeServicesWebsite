@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import type { ReactNode } from "react";
 import Link from "next/link";
+import { MAX_PHOTO_COUNT } from "@/app/lib/booking/validation";
 
 const services = [
   { label: "Junk Removal", icon: "JR" },
@@ -128,7 +129,7 @@ export function BookingFlow() {
         ...photo,
         previewUrl: previews[index],
       }));
-      update("photos", [...form.photos, ...photosWithPreviews].slice(0, 15));
+      update("photos", [...form.photos, ...photosWithPreviews].slice(0, MAX_PHOTO_COUNT));
     } catch (error) {
       previews.forEach((preview) => URL.revokeObjectURL(preview));
       setErrors({
@@ -342,7 +343,7 @@ export function BookingFlow() {
                 onChange={(event) => uploadPhotos(event.target.files)}
               />
               <span>{loading ? "Uploading..." : "Choose or drag photos"}</span>
-              <small>Optional, maximum 15 photos.</small>
+              <small>Optional, maximum {MAX_PHOTO_COUNT} photos.</small>
             </label>
             <div className="photo-preview-grid">
               {form.photos.map((photo) => (

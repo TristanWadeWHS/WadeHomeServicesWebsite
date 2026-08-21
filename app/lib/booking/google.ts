@@ -1,14 +1,40 @@
 import {
   APPROVED_STATUS,
   CONFLICT_STATUS,
+  COMPLETED_STATUS,
   DECLINED_STATUS,
+  IN_PROGRESS_STATUS,
   LEAD_STATUS,
+  LEGACY_APPROVED_STATUS,
   REQUIRED_SHEET_COLUMNS,
 } from "./config";
 import type { BusyWindow } from "./scheduling";
 import { isSlotStillAvailable } from "./scheduling";
 import type { NormalizedLead, OwnerDecisionResult, SheetLead } from "./types";
 import { escapeSheetCell, mapLeadToColumns } from "./validation";
+
+export const HISTORICAL_SPREADSHEET_ID =
+  "1VKZgdAwWURAkACKSUrEGSoNib1xQaQ7zzpBGfwneOeI";
+export const HISTORICAL_TRANSFER_COMPLETE = "Transferred";
+
+export type CloseoutInput = {
+  finalAmount: string;
+  projectCosts: string;
+  distance?: string;
+  notes?: string;
+};
+
+export type JobStatusInput = typeof APPROVED_STATUS | typeof IN_PROGRESS_STATUS;
+
+export type CompletionResult = {
+  ok: true;
+  lead: SheetLead;
+  historicalAppended: boolean;
+} | {
+  ok: false;
+  message: string;
+  lead?: SheetLead;
+};
 
 type GoogleToken = {
   accessToken: string;
@@ -102,10 +128,22 @@ export async function appendLeadToSheet(leadId: string, lead: NormalizedLead) {
 }
 
 export async function getPendingLeads() {
+  return getRequestLeads();
+}
+
+export async function getRequestLeads() {
   const { headers, rows } = await getSheetRows();
   return rows
     .map((row, index) => sheetRowToLead(headers, row, index + 2))
-    .filter((lead) => lead.status === LEAD_STATUS);
+    .filter((lead) => lead.status === LEAD_STATUS || lead.status === CONFLICT_STATUS);
+}
+
+export async function getActiveJobs() {
+  const { headers, rows } = await getSheetRows();
+  const activeStatuses = new Set([APPROVED_STATUS, LEGACY_APPROVED_STATUS, IN_PROGRESS_STATUS]);
+  return rows
+    .map((row, index) => sheetRowToLead(headers, row, index + 2))
+    .filter((lead) => activeStatuses.has(lead.status));
 }
 
 export async function getLeadById(leadId: string) {
@@ -115,10 +153,14 @@ export async function getLeadById(leadId: string) {
   return sheetRowToLead(headers, rows[index], index + 2);
 }
 
-export async function approveLead(leadId: string): Promise<OwnerDecisionResult> {
+export async function approveLead(
+  leadId: string,
+  approvedAmountValue = "",
+  approvedBy = "Owner",
+): Promise<OwnerDecisionResult> {
   const lead = await getLeadById(leadId);
   if (!lead) return { ok: false, message: "Lead not found." };
-  if (lead.status === APPROVED_STATUS && lead.calendarEventId) {
+  if ((lead.status === APPROVED_STATUS || lead.status === LEGACY_APPROVED_STATUS) && lead.calendarEventId) {
     return {
       ok: true,
       lead,
@@ -129,6 +171,8 @@ export async function approveLead(leadId: string): Promise<OwnerDecisionResult> 
   if (lead.status !== LEAD_STATUS) {
     return { ok: false, message: `Lead is ${lead.status}.`, lead };
   }
+  const approvedAmount = parseNonNegativeMoney(approvedAmountValue, "Approved amount");
+  if (!approvedAmount.ok) return { ok: false, message: approvedAmount.message, lead };
 
   const slot = leadToRequestedSlot(lead);
   if (!slot) return { ok: false, message: "Lead requested time could not be read.", lead };
@@ -154,13 +198,21 @@ export async function approveLead(leadId: string): Promise<OwnerDecisionResult> 
     lead.calendarEventId || (await findCalendarEventIdForLead(lead.leadId, slot.start, slot.end));
   const eventId = existingEventId || (await createCalendarEventForLead(lead, slot));
   const emailStatus = emailNeedsConfigurationStatus();
+  const timestamp = new Date().toISOString();
   const updated = await updateLeadColumns(lead, {
     Status: APPROVED_STATUS,
-    "Approval / Decision Timestamp": new Date().toISOString(),
+    "Approved Amount": formatMoney(approvedAmount.value),
+    "Operational Status": APPROVED_STATUS,
+    "Approval / Decision Timestamp": timestamp,
     "Google Calendar Event ID": eventId,
     "Confirmed Date": lead.requestedDate,
     "Confirmed Time": lead.requestedTime,
     "Email Status": emailStatus,
+    "Audit Trail": appendAuditEntry(
+      lead.auditTrail,
+      `${approvedBy} approved request for ${formatMoney(approvedAmount.value)}.`,
+      timestamp,
+    ),
     "Internal Notes": appendInternalNote(
       lead.internalNotes,
       existingEventId
@@ -180,6 +232,7 @@ export async function approveLead(leadId: string): Promise<OwnerDecisionResult> 
 export async function declineLead(
   leadId: string,
   reason: string,
+  declinedBy = "Owner",
 ): Promise<OwnerDecisionResult> {
   const lead = await getLeadById(leadId);
   if (!lead) return { ok: false, message: "Lead not found." };
@@ -188,11 +241,18 @@ export async function declineLead(
   }
 
   const emailStatus = emailNeedsConfigurationStatus();
+  const timestamp = new Date().toISOString();
   const updated = await updateLeadColumns(lead, {
     Status: DECLINED_STATUS,
-    "Approval / Decision Timestamp": new Date().toISOString(),
+    "Operational Status": DECLINED_STATUS,
+    "Approval / Decision Timestamp": timestamp,
     "Decline Reason": sanitizeDecisionReason(reason),
     "Email Status": emailStatus,
+    "Audit Trail": appendAuditEntry(
+      lead.auditTrail,
+      `${declinedBy} declined request: ${sanitizeDecisionReason(reason)}`,
+      timestamp,
+    ),
     "Internal Notes": appendInternalNote(
       lead.internalNotes,
       `Owner declined request: ${sanitizeDecisionReason(reason)}`,
@@ -205,6 +265,80 @@ export async function declineLead(
     calendarEventCreated: false,
     emailStatus,
   };
+}
+
+export async function updateJobStatus(
+  leadId: string,
+  status: JobStatusInput,
+  updatedBy = "Operations",
+) {
+  const lead = await getLeadById(leadId);
+  if (!lead) return { ok: false as const, message: "Lead not found." };
+  const currentStatus = normalizeOperationalStatus(lead.status);
+  const allowedCurrent = new Set([APPROVED_STATUS, IN_PROGRESS_STATUS]);
+  if (!allowedCurrent.has(currentStatus)) {
+    return { ok: false as const, message: `Lead is ${lead.status}.`, lead };
+  }
+  if (status !== APPROVED_STATUS && status !== IN_PROGRESS_STATUS) {
+    return { ok: false as const, message: "Unsupported job status.", lead };
+  }
+
+  const timestamp = new Date().toISOString();
+  const updated = await updateLeadColumns(lead, {
+    Status: status,
+    "Operational Status": status,
+    "Audit Trail": appendAuditEntry(
+      lead.auditTrail,
+      `${updatedBy} set job status to ${status}.`,
+      timestamp,
+    ),
+  });
+  return { ok: true as const, lead: updated };
+}
+
+export async function completeJob(
+  leadId: string,
+  input: CloseoutInput,
+  completedBy = "Operations",
+): Promise<CompletionResult> {
+  const lead = await getLeadById(leadId);
+  if (!lead) return { ok: false, message: "Lead not found." };
+
+  if (lead.status === COMPLETED_STATUS && lead.historicalTransferStatus === HISTORICAL_TRANSFER_COMPLETE) {
+    return { ok: true, lead, historicalAppended: false };
+  }
+
+  const currentStatus = normalizeOperationalStatus(lead.status);
+  if (currentStatus !== APPROVED_STATUS && currentStatus !== IN_PROGRESS_STATUS) {
+    return { ok: false, message: `Lead is ${lead.status}.`, lead };
+  }
+
+  const closeout = validateCloseout(input);
+  if (!closeout.ok) return { ok: false, message: closeout.message, lead };
+
+  const timestamp = new Date().toISOString();
+  if (lead.historicalTransferStatus !== HISTORICAL_TRANSFER_COMPLETE) {
+    await appendHistoricalJob(lead, closeout.value, timestamp, completedBy);
+  }
+
+  const updated = await updateLeadColumns(lead, {
+    Status: COMPLETED_STATUS,
+    "Operational Status": COMPLETED_STATUS,
+    "Completed At": timestamp,
+    "Completion Final Amount": formatMoney(closeout.value.finalAmount),
+    "Project Costs": formatMoney(closeout.value.projectCosts),
+    Distance: closeout.value.distance === null ? "" : String(closeout.value.distance),
+    "Completion Notes": closeout.value.notes,
+    "Historical Transfer Status": HISTORICAL_TRANSFER_COMPLETE,
+    "Historical Transfer Timestamp": timestamp,
+    "Audit Trail": appendAuditEntry(
+      lead.auditTrail,
+      `${completedBy} completed job and transferred historical record.`,
+      timestamp,
+    ),
+  });
+
+  return { ok: true, lead: updated, historicalAppended: lead.historicalTransferStatus !== HISTORICAL_TRANSFER_COMPLETE };
 }
 
 async function getSheetHeaders(
@@ -566,6 +700,16 @@ function sheetRowToLead(
     confirmedTime: value("Confirmed Time"),
     declineReason: value("Decline Reason"),
     emailStatus: value("Email Status"),
+    approvedAmount: value("Approved Amount"),
+    operationalStatus: value("Operational Status"),
+    completedAt: value("Completed At"),
+    completionFinalAmount: value("Completion Final Amount"),
+    projectCosts: value("Project Costs"),
+    distance: value("Distance"),
+    completionNotes: value("Completion Notes"),
+    historicalTransferStatus: value("Historical Transfer Status"),
+    historicalTransferTimestamp: value("Historical Transfer Timestamp"),
+    auditTrail: value("Audit Trail"),
   };
 }
 
@@ -596,6 +740,16 @@ function leadToRow(headers: readonly string[], lead: SheetLead) {
     "Confirmed Time": lead.confirmedTime,
     "Decline Reason": lead.declineReason,
     "Email Status": lead.emailStatus,
+    "Approved Amount": lead.approvedAmount,
+    "Operational Status": lead.operationalStatus,
+    "Completed At": lead.completedAt,
+    "Completion Final Amount": lead.completionFinalAmount,
+    "Project Costs": lead.projectCosts,
+    Distance: lead.distance,
+    "Completion Notes": lead.completionNotes,
+    "Historical Transfer Status": lead.historicalTransferStatus,
+    "Historical Transfer Timestamp": lead.historicalTransferTimestamp,
+    "Audit Trail": lead.auditTrail,
   };
   return headers.map((header) => values[header] ?? "");
 }
@@ -674,10 +828,145 @@ function appendInternalNote(existing: string, note: string) {
   return [existing, `[${stamp}] ${note}`].filter(Boolean).join("\n");
 }
 
+function appendAuditEntry(existing: string, note: string, timestamp = new Date().toISOString()) {
+  return [existing, `[${timestamp}] ${note}`].filter(Boolean).join("\n");
+}
+
 function sanitizeDecisionReason(reason: string) {
   return reason.replace(/\s+/g, " ").trim().slice(0, 300) || "No reason provided";
 }
 
 function emailNeedsConfigurationStatus() {
   return "Needs configuration: no email provider configured";
+}
+
+type MoneyParseResult =
+  | { ok: true; value: number }
+  | { ok: false; message: string };
+
+type CloseoutValues = {
+  finalAmount: number;
+  projectCosts: number;
+  distance: number | null;
+  notes: string;
+};
+
+function parseNonNegativeMoney(value: string, label: string): MoneyParseResult {
+  const cleaned = String(value ?? "").replace(/[$,]/g, "").trim();
+  if (!cleaned) return { ok: false, message: `${label} is required.` };
+  const parsed = Number(cleaned);
+  if (!Number.isFinite(parsed) || parsed < 0) {
+    return { ok: false, message: `${label} must be a non-negative number.` };
+  }
+  return { ok: true, value: Math.round(parsed * 100) / 100 };
+}
+
+function parseOptionalNonNegativeNumber(value: string, label: string) {
+  const cleaned = String(value ?? "").trim();
+  if (!cleaned) return { ok: true as const, value: null };
+  const parsed = Number(cleaned);
+  if (!Number.isFinite(parsed) || parsed < 0) {
+    return { ok: false as const, message: `${label} must be a non-negative number.` };
+  }
+  return { ok: true as const, value: Math.round(parsed * 100) / 100 };
+}
+
+function validateCloseout(input: CloseoutInput): {
+  ok: true;
+  value: CloseoutValues;
+} | {
+  ok: false;
+  message: string;
+} {
+  const finalAmount = parseNonNegativeMoney(input.finalAmount, "Final amount");
+  if (!finalAmount.ok) return finalAmount;
+  const projectCosts = parseNonNegativeMoney(input.projectCosts, "Project costs");
+  if (!projectCosts.ok) return projectCosts;
+  const distance = parseOptionalNonNegativeNumber(input.distance ?? "", "Distance");
+  if (!distance.ok) return distance;
+
+  return {
+    ok: true,
+    value: {
+      finalAmount: finalAmount.value,
+      projectCosts: projectCosts.value,
+      distance: distance.value,
+      notes: sanitizeDecisionReason(input.notes ?? ""),
+    },
+  };
+}
+
+function formatMoney(value: number) {
+  return value.toFixed(2);
+}
+
+function normalizeOperationalStatus(status: string) {
+  return status === LEGACY_APPROVED_STATUS ? APPROVED_STATUS : status;
+}
+
+export function buildHistoricalRow(
+  lead: SheetLead,
+  closeout: CloseoutValues,
+  completedAt: string,
+  completedBy: string,
+  headers: readonly string[],
+) {
+  const projectCosts = closeout.projectCosts;
+  const netProfit = closeout.finalAmount - projectCosts;
+  const roi =
+    projectCosts > 0 ? `${(((closeout.finalAmount - projectCosts) / projectCosts) * 100).toFixed(2)}%` : "";
+  const values: Record<string, string> = {
+    Date: completedAt.slice(0, 10),
+    "Job Type": lead.services,
+    Amount: formatMoney(closeout.finalAmount),
+    Owner: completedBy,
+    City: lead.city,
+    Payment_Expense: "Payment",
+    Distance: closeout.distance === null ? "" : String(closeout.distance),
+    "Project Costs": formatMoney(closeout.projectCosts),
+    ROI: roi,
+    Client: lead.name,
+    "Net Profit": formatMoney(netProfit),
+    Completed: "1",
+    Notes: [
+      closeout.notes,
+      `Lead ID: ${lead.leadId}`,
+      lead.appointmentType ? `Appointment Type: ${lead.appointmentType}` : "",
+      lead.projectDescription ? `Project Description: ${lead.projectDescription}` : "",
+    ].filter(Boolean).join(" | "),
+  };
+  return headers.map((header) => escapeSheetCell(values[header] ?? ""));
+}
+
+async function appendHistoricalJob(
+  lead: SheetLead,
+  closeout: CloseoutValues,
+  completedAt: string,
+  completedBy: string,
+) {
+  const spreadsheetId = process.env.HISTORICAL_SPREADSHEET_ID || HISTORICAL_SPREADSHEET_ID;
+  const sheetName = process.env.HISTORICAL_SHEET_TAB || "Sheet1";
+  const token = await getGoogleAccessToken([SHEETS_SCOPE]);
+  const headers = await getSheetHeaders(spreadsheetId, sheetName, token);
+  const row = buildHistoricalRow(lead, closeout, completedAt, completedBy, headers);
+
+  const response = await fetch(
+    `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${encodeURIComponent(
+      sheetName,
+    )}!A1:append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS`,
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ values: [row] }),
+    },
+  );
+
+  if (!response.ok) {
+    throw new Error(
+      `Historical Google Sheets append failed with ${response.status}: ${await response.text()}`,
+    );
+  }
 }

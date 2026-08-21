@@ -2,7 +2,11 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 import { LEAD_SOURCE, LEAD_STATUS, REQUIRED_SHEET_COLUMNS } from "../app/lib/booking/config.ts";
-import { buildCalendarEventResource, googleConfigured } from "../app/lib/booking/google.ts";
+import {
+  buildCalendarEventResource,
+  buildHistoricalRow,
+  googleConfigured,
+} from "../app/lib/booking/google.ts";
 import {
   buildOwnerNotificationPayload,
   ownerApprovalPortalUrl,
@@ -20,20 +24,33 @@ import {
 } from "../app/lib/booking/security.ts";
 import {
   clearedOwnerSessionCookieOptions,
+  createOperationsSession,
   createOwnerSession,
+  getAuthorizedOperationsUser,
   isOwnerAuthorized,
   isSameOriginRequest,
+  operationsSessionCookieOptions,
+  OPERATIONS_SESSION_ACTIVE_COOKIE,
+  OPERATIONS_SESSION_COOKIE,
+  requireRole,
+  ROLE_FIELD_MANAGER,
+  ROLE_OWNER,
   isValidOwnerSession,
   isValidOwnerToken,
   OWNER_SESSION_ACTIVE_COOKIE,
   OWNER_SESSION_COOKIE,
   ownerSessionCookieOptions,
+  roleForToken,
   revokeOwnerSession,
+  verifyOperationsSession,
 } from "../app/lib/booking/ownerAuth.ts";
 import {
   createLeadId,
   escapeSheetCell,
+  MAX_PHOTO_AGGREGATE_SIZE_BYTES,
+  MAX_PHOTO_COUNT,
   mapLeadToColumns,
+  validatePhotoFile,
   validateSubmission,
 } from "../app/lib/booking/validation.ts";
 
@@ -214,9 +231,95 @@ test("owner approval actions are handled by the client instead of raw API form n
 
 test("legacy owner approvals route redirects to canonical owner portal", () => {
   const source = readFileSync("app/owner/approvals/page.tsx", "utf8");
-  assert.equal(source.includes('redirect("/owner")'), true);
+  assert.equal(source.includes('redirect("/login")'), true);
   assert.equal(source.includes("OWNER_APPROVAL_TOKEN"), false);
   assert.equal(source.includes("?token="), false);
+});
+
+test("operations sessions support owner and field manager roles without exposing tokens", () => {
+  const previous = {
+    owner: process.env.OWNER_APPROVAL_TOKEN,
+    field: process.env.FIELD_MANAGER_ACCESS_TOKEN,
+  };
+  process.env.OWNER_APPROVAL_TOKEN = "owner-secret";
+  process.env.FIELD_MANAGER_ACCESS_TOKEN = "field-secret";
+
+  assert.deepEqual(roleForToken("owner-secret"), { role: ROLE_OWNER, label: "Owner" });
+  assert.deepEqual(roleForToken("field-secret"), {
+    role: ROLE_FIELD_MANAGER,
+    label: "Field Manager",
+  });
+  assert.equal(roleForToken("wrong"), null);
+
+  const session = createOperationsSession({ role: ROLE_FIELD_MANAGER, label: "Field Manager" });
+  assert.deepEqual(verifyOperationsSession(session), {
+    role: ROLE_FIELD_MANAGER,
+    label: "Field Manager",
+  });
+  const request = new Request("https://wade.example/api/operations/job/status", {
+    headers: {
+      cookie: [
+        `${OPERATIONS_SESSION_COOKIE}=${encodeURIComponent(session)}`,
+        `${OPERATIONS_SESSION_ACTIVE_COOKIE}=1`,
+      ].join("; "),
+    },
+  });
+  assert.equal(getAuthorizedOperationsUser(request).role, ROLE_FIELD_MANAGER);
+  assert.equal(requireRole(request, ROLE_OWNER).ok, false);
+  assert.equal(requireRole(request, ROLE_FIELD_MANAGER).ok, true);
+
+  const options = operationsSessionCookieOptions();
+  assert.equal(options.httpOnly, true);
+  assert.equal(options.secure, true);
+  assert.equal(options.sameSite, "strict");
+
+  restoreOperationsEnv(previous);
+});
+
+test("photo limits enforce Version 4.2 count and aggregate requirements", () => {
+  assert.equal(MAX_PHOTO_COUNT, 10);
+  assert.equal(MAX_PHOTO_AGGREGATE_SIZE_BYTES, 50 * 1024 * 1024);
+  const file = new File(["x"], "photo.jpg", { type: "image/jpeg" });
+  assert.equal(validatePhotoFile(file), null);
+  const badFile = new File(["x"], "photo.gif", { type: "image/gif" });
+  assert.match(validatePhotoFile(badFile), /JPG|PNG|WEBP|HEIC|HEIF/);
+});
+
+test("historical completion row maps financial fields without mutating source headers", () => {
+  const headers = [
+    "Date",
+    "Job Type",
+    "Amount",
+    "Owner",
+    "City",
+    "Payment_Expense",
+    "Distance",
+    "Project Costs",
+    "ROI",
+    "Client",
+    "Net Profit",
+    "Completed",
+    "Notes",
+  ];
+  const row = buildHistoricalRow(
+    sheetLeadFixture(),
+    {
+      finalAmount: 500,
+      projectCosts: 125,
+      distance: 12.5,
+      notes: "Finished cleanout.",
+    },
+    "2026-08-20T19:30:00.000Z",
+    "Field Manager",
+    headers,
+  );
+  assert.equal(row[headers.indexOf("Date")], "2026-08-20");
+  assert.equal(row[headers.indexOf("Amount")], "500.00");
+  assert.equal(row[headers.indexOf("Project Costs")], "125.00");
+  assert.equal(row[headers.indexOf("ROI")], "300.00%");
+  assert.equal(row[headers.indexOf("Net Profit")], "375.00");
+  assert.equal(row[headers.indexOf("Completed")], "1");
+  assert.match(row[headers.indexOf("Notes")], /Lead ID: WHS-20260812-TEST01/);
 });
 
 test("JSON body reader enforces size limits before validation", async () => {
@@ -598,4 +701,59 @@ function restoreOwnerPortalEnv(values) {
       process.env[key] = value;
     }
   }
+}
+
+function restoreOperationsEnv(values) {
+  for (const [key, value] of Object.entries({
+    OWNER_APPROVAL_TOKEN: values.owner,
+    FIELD_MANAGER_ACCESS_TOKEN: values.field,
+  })) {
+    if (value === undefined) {
+      delete process.env[key];
+    } else {
+      process.env[key] = value;
+    }
+  }
+}
+
+function sheetLeadFixture(overrides = {}) {
+  return {
+    rowNumber: 2,
+    leadId: "WHS-20260812-TEST01",
+    createdAt: "2026-08-12T20:00:00.000Z",
+    status: "Approved / Scheduled",
+    name: "WHS TEST CUSTOMER",
+    email: "test@example.com",
+    phone: "949-424-5605",
+    streetAddress: "123 Test Way",
+    city: "Mission Viejo",
+    state: "CA",
+    zip: "92691",
+    accessNotes: "",
+    services: "Junk Removal",
+    appointmentType: "On-Site Estimate",
+    projectDescription: "Test project description.",
+    photoReferences: "",
+    requestedDate: "2026-08-15",
+    requestedTime: "Sat, Aug 15, 10:00 AM",
+    source: "Website",
+    internalNotes: "",
+    decisionTimestamp: "",
+    calendarEventId: "",
+    confirmedDate: "",
+    confirmedTime: "",
+    declineReason: "",
+    emailStatus: "",
+    approvedAmount: "",
+    operationalStatus: "",
+    completedAt: "",
+    completionFinalAmount: "",
+    projectCosts: "",
+    distance: "",
+    completionNotes: "",
+    historicalTransferStatus: "",
+    historicalTransferTimestamp: "",
+    auditTrail: "",
+    ...overrides,
+  };
 }

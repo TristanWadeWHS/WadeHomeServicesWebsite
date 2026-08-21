@@ -20,8 +20,9 @@ const VALID_IMAGE_TYPES = new Set([
   "image/heif",
 ]);
 
-export const MAX_PHOTO_COUNT = 15;
+export const MAX_PHOTO_COUNT = 10;
 export const MAX_PHOTO_SIZE_BYTES = 10 * 1024 * 1024;
+export const MAX_PHOTO_AGGREGATE_SIZE_BYTES = 50 * 1024 * 1024;
 
 export function validateSubmission(input: unknown): ValidationResult<NormalizedLead> {
   const errors: Record<string, string> = {};

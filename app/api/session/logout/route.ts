@@ -23,6 +23,7 @@ export async function POST(request: Request) {
   }
   revokeOperationsSession(getOperationsSessionFromRequest(request));
   revokeOwnerSession(getOwnerSessionFromRequest(request));
+
   const response = NextResponse.redirect(new URL("/login", request.url), 303);
   response.cookies.set(OPERATIONS_SESSION_COOKIE, "", clearedOperationsSessionCookieOptions());
   response.cookies.set(

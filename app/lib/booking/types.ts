@@ -78,6 +78,16 @@ export type SheetLead = {
   confirmedTime: string;
   declineReason: string;
   emailStatus: string;
+  approvedAmount: string;
+  operationalStatus: string;
+  completedAt: string;
+  completionFinalAmount: string;
+  projectCosts: string;
+  distance: string;
+  completionNotes: string;
+  historicalTransferStatus: string;
+  historicalTransferTimestamp: string;
+  auditTrail: string;
 };
 
 export type OwnerDecisionResult = {

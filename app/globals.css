@@ -1228,6 +1228,55 @@ p {
   opacity: 0.62;
 }
 
+.operations-portal,
+.operations-section {
+  display: grid;
+  gap: 22px;
+}
+
+.operations-toolbar,
+.operations-section__header {
+  align-items: flex-start;
+  display: flex;
+  gap: 18px;
+  justify-content: space-between;
+}
+
+.operations-toolbar h2,
+.operations-section__header h3 {
+  margin: 0;
+}
+
+.operations-section__header p {
+  margin: 6px 0 0;
+  max-width: 620px;
+}
+
+.operations-actions,
+.operations-job-controls,
+.operations-closeout {
+  display: grid;
+  gap: 14px;
+}
+
+.operations-actions {
+  grid-template-columns: minmax(180px, 220px) auto minmax(240px, 1fr);
+}
+
+.operations-amount {
+  margin: 0;
+}
+
+.operations-closeout {
+  align-items: end;
+  grid-template-columns: repeat(3, minmax(140px, 1fr)) minmax(220px, 1.4fr) auto;
+}
+
+.operations-notes textarea {
+  min-height: 44px;
+  resize: vertical;
+}
+
 .site-footer {
   align-items: start;
   background: var(--charcoal);
@@ -1299,6 +1348,8 @@ p {
   }
 
   .estimator,
+  .operations-toolbar,
+  .operations-section__header,
   .owner-lead__header,
   .owner-actions,
   .site-footer {
@@ -1307,6 +1358,11 @@ p {
   }
 
   .owner-detail-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .operations-actions,
+  .operations-closeout {
     grid-template-columns: 1fr;
   }
 

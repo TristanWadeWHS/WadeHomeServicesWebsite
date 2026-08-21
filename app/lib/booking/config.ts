@@ -43,12 +43,29 @@ export const PHASE_3_SHEET_COLUMNS = [
   "Email Status",
 ] as const;
 
+export const OPERATIONS_SHEET_COLUMNS = [
+  "Approved Amount",
+  "Operational Status",
+  "Completed At",
+  "Completion Final Amount",
+  "Project Costs",
+  "Distance",
+  "Completion Notes",
+  "Historical Transfer Status",
+  "Historical Transfer Timestamp",
+  "Audit Trail",
+] as const;
+
 export const REQUIRED_SHEET_COLUMNS = [
   ...WEBSITE_LEAD_COLUMNS,
   ...PHASE_3_SHEET_COLUMNS,
+  ...OPERATIONS_SHEET_COLUMNS,
 ] as const;
 
-export const APPROVED_STATUS = "Approved";
+export const APPROVED_STATUS = "Approved / Scheduled";
+export const LEGACY_APPROVED_STATUS = "Approved";
+export const IN_PROGRESS_STATUS = "In Progress";
+export const COMPLETED_STATUS = "Completed";
 export const DECLINED_STATUS = "Declined";
 export const CONFLICT_STATUS = "Pending Approval - Time Conflict";
 
