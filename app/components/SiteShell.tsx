@@ -27,7 +27,7 @@ export function SiteShell({ children }: { children: ReactNode }) {
           </span>
           <span className="brand__copy">
             <span className="brand__name">Wade Home Services</span>
-            <span className="brand__tagline">Southern California&apos;s Cleanouts.</span>
+            <span className="brand__tagline">Southern California&apos;s Trusted Specialist</span>
           </span>
         </Link>
         <nav className="site-nav" aria-label="Primary navigation">

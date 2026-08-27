@@ -13,6 +13,7 @@ import type { BusyWindow } from "./scheduling";
 import { isSlotStillAvailable } from "./scheduling";
 import type { NormalizedLead, OwnerDecisionResult, SheetLead } from "./types";
 import { escapeSheetCell, mapLeadToColumns } from "./validation";
+import { sendCustomerApprovalConfirmation } from "./ownerNotifications";
 
 export const HISTORICAL_SPREADSHEET_ID =
   "1VKZgdAwWURAkACKSUrEGSoNib1xQaQ7zzpBGfwneOeI";
@@ -207,7 +208,7 @@ export async function approveLead(
   const existingEventId =
     lead.calendarEventId || (await findCalendarEventIdForLead(lead.leadId, slot.start, slot.end));
   const eventId = existingEventId || (await createCalendarEventForLead(lead, slot));
-  const emailStatus = emailNeedsConfigurationStatus();
+  const emailStatus = "Customer confirmation pending.";
   const timestamp = new Date().toISOString();
   const updated = await updateLeadColumns(lead, {
     Status: APPROVED_STATUS,
@@ -232,11 +233,32 @@ export async function approveLead(
     ),
   });
 
+  const confirmation = await safeSendCustomerApprovalConfirmation(updated);
+  const finalEmailStatus = customerConfirmationEmailStatus(confirmation);
+  let finalLead = updated;
+  try {
+    finalLead = await updateLeadColumns(updated, {
+      "Email Status": finalEmailStatus,
+      "Internal Notes": appendInternalNote(
+        updated.internalNotes,
+        confirmation.ok
+          ? "Customer confirmation email sent after owner approval."
+          : `Customer confirmation email failed after owner approval: ${confirmation.reason}`,
+      ),
+    });
+  } catch (error) {
+    logCustomerConfirmationFailure(
+      lead.leadId,
+      `Customer confirmation status could not be recorded: ${errorMessage(error)}`,
+    );
+  }
+  if (!confirmation.ok) logCustomerConfirmationFailure(lead.leadId, confirmation.reason);
+
   return {
     ok: true,
-    lead: updated,
+    lead: finalLead,
     calendarEventCreated: !existingEventId,
-    emailStatus,
+    emailStatus: finalEmailStatus,
   };
 }
 
@@ -923,6 +945,41 @@ function sanitizeRequiredText(value: string, label: string, maxLength: number): 
 
 function emailNeedsConfigurationStatus() {
   return "Needs configuration: no email provider configured";
+}
+
+async function safeSendCustomerApprovalConfirmation(lead: SheetLead) {
+  try {
+    return await sendCustomerApprovalConfirmation(lead);
+  } catch (error) {
+    return {
+      ok: false as const,
+      reason: `Customer confirmation failed with provider/network error: ${errorMessage(error)}`,
+    };
+  }
+}
+
+function customerConfirmationEmailStatus(
+  result: Awaited<ReturnType<typeof safeSendCustomerApprovalConfirmation>>,
+) {
+  if (!result.ok) return `Customer confirmation failed: ${result.reason}`;
+  return result.messageId
+    ? `Customer confirmation sent via Brevo (${result.messageId}).`
+    : "Customer confirmation sent via Brevo.";
+}
+
+function logCustomerConfirmationFailure(leadId: string, message: string) {
+  console.error(
+    JSON.stringify({
+      level: "error",
+      scope: "customer.confirmation",
+      message,
+      context: { leadId },
+    }),
+  );
+}
+
+function errorMessage(error: unknown) {
+  return error instanceof Error ? error.message.slice(0, 240) : "Unknown error";
 }
 
 type MoneyParseResult =
