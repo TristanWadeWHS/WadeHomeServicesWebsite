@@ -13,6 +13,7 @@ import {
   googleConfigured,
 } from "../app/lib/booking/google.ts";
 import {
+  buildCustomerConfirmationPayload,
   buildOwnerNotificationPayload,
   ownerApprovalPortalUrl,
   ownerNotificationConfigured,
@@ -557,6 +558,64 @@ test("Brevo owner notification payload includes required lead details and no cus
   assert.match(combinedContent, /https:\/\/www\.wadehomeservices\.com\/owner/);
   assert.equal(combinedContent.includes("OWNER_APPROVAL_TOKEN"), false);
   assert.equal(combinedContent.includes("?token="), false);
+});
+
+test("booking request time uses date and time dropdowns from availability slots", () => {
+  const source = readFileSync("app/components/booking/BookingFlow.tsx", "utf8");
+
+  assert.equal(source.includes("Preferred Date"), true);
+  assert.equal(source.includes("Preferred Time"), true);
+  assert.equal(source.includes("setSelectedDate"), true);
+  assert.equal(source.includes("groupedSlots[selectedDate]"), true);
+  assert.equal(source.includes('fetch("/api/booking/availability")'), true);
+  assert.equal(source.includes("Refresh Available Times"), true);
+  assert.equal(source.includes("This does not confirm the appointment"), true);
+  assert.equal(source.includes("slot-button"), false);
+});
+
+test("Brevo customer confirmation payload includes confirmed appointment details", () => {
+  const lead = sheetLeadFixture({
+    leadId: "WHS-20260825-CONF01",
+    name: "Customer Confirmation Test",
+    email: "customer-confirmation@example.com",
+    streetAddress: "789 Confirmation Way",
+    services: "Junk Removal, Light Demolition",
+    confirmedDate: "2026-08-25",
+    confirmedTime: "Tue, Aug 25, 2:00 PM",
+  });
+  const payload = buildCustomerConfirmationPayload(lead);
+  const combinedContent = `${payload.htmlContent}\n${payload.textContent}`;
+
+  assert.deepEqual(payload.to, [{
+    email: "customer-confirmation@example.com",
+    name: "Customer Confirmation Test",
+  }]);
+  assert.equal(payload.subject, "Your Wade Home Services Appointment Is Confirmed");
+  assert.match(combinedContent, /appointment is confirmed/i);
+  assert.match(combinedContent, /WHS-20260825-CONF01/);
+  assert.match(combinedContent, /2026-08-25/);
+  assert.match(combinedContent, /Tue, Aug 25, 2:00 PM/);
+  assert.match(combinedContent, /Junk Removal, Light Demolition/);
+  assert.match(combinedContent, /789 Confirmation Way/);
+  assert.match(combinedContent, /949-424-5605/);
+  assert.equal(combinedContent.includes("BREVO_API_KEY"), false);
+});
+
+test("customer confirmation is sent only after approval succeeds", () => {
+  const approvalSource = readFileSync("app/lib/booking/google.ts", "utf8");
+  const submitSource = readFileSync("app/api/booking/submit/route.ts", "utf8");
+  const declineSource = readFileSync("app/api/owner/booking/decline/route.ts", "utf8");
+  const approvalUpdateIndex = approvalSource.indexOf("const updated = await updateLeadColumns(lead");
+  const confirmationIndex = approvalSource.indexOf("safeSendCustomerApprovalConfirmation(updated)");
+
+  assert.ok(approvalUpdateIndex > -1);
+  assert.ok(confirmationIndex > approvalUpdateIndex);
+  assert.equal(approvalSource.includes("Customer confirmation pending."), true);
+  assert.equal(approvalSource.includes("customerConfirmationEmailStatus"), true);
+  assert.equal(approvalSource.includes("logCustomerConfirmationFailure"), true);
+  assert.equal(approvalSource.includes("sendCustomerApprovalConfirmation"), true);
+  assert.equal(submitSource.includes("sendCustomerApprovalConfirmation"), false);
+  assert.equal(declineSource.includes("sendCustomerApprovalConfirmation"), false);
 });
 
 test("owner signed session accepts valid cookie and rejects invalid sessions", () => {

@@ -1,4 +1,4 @@
-import type { NormalizedLead } from "./types";
+import type { NormalizedLead, SheetLead } from "./types";
 
 type OwnerNotificationResult =
   | { ok: true; skipped?: false; messageId?: string }
@@ -11,6 +11,7 @@ const OWNER_NOTIFICATION_SENDER = {
   name: "Wade Home Services",
 };
 const OWNER_NOTIFICATION_SUBJECT = "New Wade Home Services Booking Request";
+const CUSTOMER_CONFIRMATION_SUBJECT = "Your Wade Home Services Appointment Is Confirmed";
 
 export function ownerNotificationConfigured() {
   return Boolean(
@@ -56,6 +57,45 @@ export async function sendOwnerNewLeadNotification(
   return { ok: true, messageId };
 }
 
+export async function sendCustomerApprovalConfirmation(
+  lead: SheetLead,
+): Promise<OwnerNotificationResult> {
+  const apiKey = process.env.BREVO_API_KEY;
+  if (!apiKey) {
+    return {
+      ok: false,
+      skipped: true,
+      reason: "Customer confirmation email is not configured. Set BREVO_API_KEY.",
+    };
+  }
+  if (!lead.email) {
+    return {
+      ok: false,
+      skipped: true,
+      reason: "Customer confirmation email skipped because lead email is missing.",
+    };
+  }
+
+  const response = await fetch(BREVO_API_URL, {
+    method: "POST",
+    headers: {
+      Accept: "application/json",
+      "api-key": apiKey,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(buildCustomerConfirmationPayload(lead)),
+  });
+
+  if (!response.ok) {
+    return { ok: false, reason: await sanitizedBrevoError(response, apiKey) };
+  }
+
+  const payload = await readBrevoJson(response);
+  const messageId =
+    typeof payload?.messageId === "string" ? payload.messageId : undefined;
+  return { ok: true, messageId };
+}
+
 export function ownerApprovalPortalUrl() {
   const explicit = process.env.OWNER_APPROVAL_PORTAL_URL;
   if (explicit) return explicit;
@@ -84,6 +124,20 @@ export function buildOwnerNotificationPayload(
     tags: ["owner-booking-notification"],
     headers: {
       "X-Mailin-custom": `leadId:${leadId}`,
+    },
+  };
+}
+
+export function buildCustomerConfirmationPayload(lead: SheetLead) {
+  return {
+    sender: OWNER_NOTIFICATION_SENDER,
+    to: [{ email: lead.email, name: lead.name }],
+    subject: CUSTOMER_CONFIRMATION_SUBJECT,
+    htmlContent: customerConfirmationHtml(lead),
+    textContent: customerConfirmationText(lead),
+    tags: ["customer-appointment-confirmation"],
+    headers: {
+      "X-Mailin-custom": `leadId:${lead.leadId}`,
     },
   };
 }
@@ -159,6 +213,68 @@ function ownerNotificationText(
     `Requested time: ${lead.requestedSlot.label}`,
     `Review Request: ${portalUrl}`,
   ].join("\n");
+}
+
+function customerConfirmationHtml(lead: SheetLead) {
+  const rows = [
+    ["Lead ID", lead.leadId],
+    ["Confirmed date", lead.confirmedDate || lead.requestedDate],
+    ["Confirmed time", lead.confirmedTime || lead.requestedTime],
+    ["Service type(s)", lead.services],
+    ["Service address", serviceAddress(lead)],
+    ["Phone", "949-424-5605"],
+    ["Email", OWNER_NOTIFICATION_SENDER.email],
+  ];
+
+  return `<!doctype html>
+<html>
+  <body style="margin:0;background:#f4f5f2;color:#202724;font-family:Arial,Helvetica,sans-serif;">
+    <main style="max-width:640px;margin:0 auto;padding:28px 18px;">
+      <section style="background:#ffffff;border:1px solid #d8ddd7;border-radius:8px;padding:24px;">
+        <p style="color:#4f705d;font-size:12px;font-weight:800;letter-spacing:.08em;margin:0 0 8px;text-transform:uppercase;">Appointment confirmed</p>
+        <h1 style="color:#08251d;font-size:24px;line-height:1.2;margin:0 0 18px;">Your Wade Home Services appointment is confirmed, ${escapeHtml(firstName(lead.name))}.</h1>
+        <p style="font-size:16px;line-height:1.55;margin:0 0 18px;">Your requested appointment has been approved and added to the Wade Home Services calendar.</p>
+        <table style="border-collapse:collapse;width:100%;">
+          ${rows
+            .map(
+              ([label, value]) => `<tr>
+                <th style="border-top:1px solid #d8ddd7;color:#123f2f;font-size:12px;padding:12px 8px;text-align:left;text-transform:uppercase;width:170px;">${escapeHtml(label)}</th>
+                <td style="border-top:1px solid #d8ddd7;padding:12px 8px;">${escapeHtml(value)}</td>
+              </tr>`,
+            )
+            .join("")}
+        </table>
+        <p style="font-size:14px;line-height:1.55;margin:22px 0 0;">If anything changes, call Wade Home Services at <a href="tel:+19494245605" style="color:#123f2f;font-weight:800;">949-424-5605</a>.</p>
+      </section>
+    </main>
+  </body>
+</html>`;
+}
+
+function customerConfirmationText(lead: SheetLead) {
+  return [
+    `Hi ${firstName(lead.name)},`,
+    "",
+    "Your Wade Home Services appointment is confirmed.",
+    "",
+    `Lead ID: ${lead.leadId}`,
+    `Confirmed date: ${lead.confirmedDate || lead.requestedDate}`,
+    `Confirmed time: ${lead.confirmedTime || lead.requestedTime}`,
+    `Service type(s): ${lead.services}`,
+    `Service address: ${serviceAddress(lead)}`,
+    "",
+    "Wade Home Services contact information:",
+    "Phone: 949-424-5605",
+    `Email: ${OWNER_NOTIFICATION_SENDER.email}`,
+  ].join("\n");
+}
+
+function firstName(name: string) {
+  return name.trim().split(/\s+/)[0] || "there";
+}
+
+function serviceAddress(lead: SheetLead) {
+  return `${lead.streetAddress}, ${lead.city}, ${lead.state} ${lead.zip}`;
 }
 
 function trimTrailingSlash(value: string) {

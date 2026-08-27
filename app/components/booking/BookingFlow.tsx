@@ -81,6 +81,7 @@ export function BookingFlow() {
   const [form, setForm] = useState<FormState>(initialState);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [slots, setSlots] = useState<Slot[]>([]);
+  const [selectedDate, setSelectedDate] = useState("");
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState<{ leadId: string; requestedTime: string } | null>(
     null,
@@ -148,6 +149,17 @@ export function BookingFlow() {
       const json = await response.json();
       if (!response.ok) throw new Error(json.message || "Availability is unavailable.");
       setSlots(json.slots);
+      setForm((current) => ({
+        ...current,
+        requestedSlot:
+          current.requestedSlot &&
+          json.slots.some((slot: Slot) => slot.start === current.requestedSlot?.start)
+            ? current.requestedSlot
+            : null,
+      }));
+      setSelectedDate((current) =>
+        json.slots.some((slot: Slot) => slot.dateLabel === current) ? current : "",
+      );
     } catch (error) {
       setErrors({
         requestedSlot:
@@ -214,6 +226,7 @@ export function BookingFlow() {
       return groups;
     }, {});
   }, [slots]);
+  const selectedDateSlots = selectedDate ? groupedSlots[selectedDate] ?? [] : [];
 
   if (success) {
     return (
@@ -400,28 +413,45 @@ export function BookingFlow() {
               Refresh Available Times
             </button>
             <FieldError message={errors.requestedSlot} />
-            <div className="slot-groups">
-              {Object.entries(groupedSlots).map(([date, dateSlots]) => (
-                <div className="slot-group" key={date}>
-                  <h3>{date}</h3>
-                  <div className="slot-grid">
-                    {dateSlots.map((slot) => (
-                      <button
-                        className={`slot-button${
-                          form.requestedSlot?.start === slot.start
-                            ? " slot-button--selected"
-                            : ""
-                        }`}
-                        key={slot.start}
-                        type="button"
-                        onClick={() => update("requestedSlot", slot)}
-                      >
-                        {slot.label}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              ))}
+            <div className="field-grid availability-selectors">
+              <label className="field">
+                <span>Preferred Date</span>
+                <select
+                  value={selectedDate}
+                  onChange={(event) => {
+                    const nextDate = event.target.value;
+                    setSelectedDate(nextDate);
+                    update("requestedSlot", null);
+                  }}
+                >
+                  <option value="">Select a date</option>
+                  {Object.keys(groupedSlots).map((date) => (
+                    <option key={date} value={date}>
+                      {date}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="field">
+                <span>Preferred Time</span>
+                <select
+                  disabled={!selectedDate}
+                  value={form.requestedSlot?.start ?? ""}
+                  onChange={(event) => {
+                    const slot = selectedDateSlots.find(
+                      (item) => item.start === event.target.value,
+                    );
+                    update("requestedSlot", slot ?? null);
+                  }}
+                >
+                  <option value="">Select a time</option>
+                  {selectedDateSlots.map((slot) => (
+                    <option key={slot.start} value={slot.start}>
+                      {slot.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
             </div>
           </StepBlock>
         ) : null}
