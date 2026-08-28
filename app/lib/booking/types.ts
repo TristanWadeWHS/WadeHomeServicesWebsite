@@ -68,6 +68,7 @@ export type SheetLead = {
   appointmentType: string;
   projectDescription: string;
   photoReferences: string;
+  photos: PhotoReference[];
   requestedDate: string;
   requestedTime: string;
   source: string;

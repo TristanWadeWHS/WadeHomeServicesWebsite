@@ -3,7 +3,11 @@
 import { useMemo, useState } from "react";
 import type { ReactNode } from "react";
 import Link from "next/link";
-import { MAX_PHOTO_COUNT } from "@/app/lib/booking/validation";
+import {
+  MAX_PHOTO_AGGREGATE_SIZE_BYTES,
+  MAX_PHOTO_COUNT,
+  MAX_PHOTO_SIZE_BYTES,
+} from "@/app/lib/booking/validation";
 
 const services = [
   { label: "Junk Removal", icon: "JR" },
@@ -117,6 +121,23 @@ export function BookingFlow() {
     setErrors({});
     const payload = new FormData();
     const selectedFiles = Array.from(files);
+    const currentSize = form.photos.reduce((total, photo) => total + photo.size, 0);
+    const selectedSize = selectedFiles.reduce((total, file) => total + file.size, 0);
+    if (form.photos.length + selectedFiles.length > MAX_PHOTO_COUNT) {
+      setLoading(false);
+      setErrors({ photos: `Upload no more than ${MAX_PHOTO_COUNT} photos.` });
+      return;
+    }
+    if (selectedFiles.some((file) => file.size > MAX_PHOTO_SIZE_BYTES)) {
+      setLoading(false);
+      setErrors({ photos: "Each photo must be 10 MB or smaller." });
+      return;
+    }
+    if (currentSize + selectedSize > MAX_PHOTO_AGGREGATE_SIZE_BYTES) {
+      setLoading(false);
+      setErrors({ photos: "Upload no more than 50 MB of photos total." });
+      return;
+    }
     const previews = selectedFiles.map((file) => URL.createObjectURL(file));
     selectedFiles.forEach((file) => payload.append("photos", file));
     try {
@@ -167,6 +188,23 @@ export function BookingFlow() {
       });
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function removePhoto(photo: PhotoRef) {
+    update(
+      "photos",
+      form.photos.filter((item) => item.id !== photo.id),
+    );
+    if (photo.previewUrl) URL.revokeObjectURL(photo.previewUrl);
+    try {
+      await fetch("/api/booking/photos", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ photos: [photo] }),
+      });
+    } catch {
+      // Cleanup is best-effort; the server never exposes Blob credentials.
     }
   }
 
@@ -368,12 +406,7 @@ export function BookingFlow() {
                   <span>{photo.name}</span>
                   <button
                     type="button"
-                    onClick={() =>
-                      update(
-                        "photos",
-                        form.photos.filter((item) => item.id !== photo.id),
-                      )
-                    }
+                    onClick={() => removePhoto(photo)}
                     aria-label={`Remove ${photo.name}`}
                   >
                     Remove

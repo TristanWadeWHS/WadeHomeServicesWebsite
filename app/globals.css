@@ -1183,6 +1183,30 @@ p {
   margin: 5px 0 0;
 }
 
+.operations-photo-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+}
+
+.operations-photo-link {
+  border: 1px solid rgba(30, 96, 66, 0.24);
+  border-radius: 999px;
+  color: var(--forest);
+  display: inline-flex;
+  font-size: 0.82rem;
+  font-weight: 800;
+  padding: 0.38rem 0.65rem;
+  text-decoration: none;
+}
+
+.operations-photo-link:focus-visible,
+.operations-photo-link:hover {
+  background: rgba(30, 96, 66, 0.1);
+  outline: 3px solid rgba(30, 96, 66, 0.24);
+  outline-offset: 2px;
+}
+
 .owner-status-detail {
   display: flex;
   flex-wrap: wrap;

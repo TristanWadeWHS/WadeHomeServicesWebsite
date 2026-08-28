@@ -79,6 +79,10 @@ export function validateSubmission(input: unknown): ValidationResult<NormalizedL
   if (photos.length > MAX_PHOTO_COUNT) {
     errors.photos = `Upload no more than ${MAX_PHOTO_COUNT} photos.`;
   }
+  const aggregatePhotoSize = photos.reduce((total, photo) => total + Number(photo.size || 0), 0);
+  if (aggregatePhotoSize > MAX_PHOTO_AGGREGATE_SIZE_BYTES) {
+    errors.photos = "Upload no more than 50 MB of photos total.";
+  }
   photos.forEach((photo, index) => {
     const photoError = validatePhotoReference(photo);
     if (photoError) errors[`photo-${index}`] = photoError;
@@ -135,6 +139,13 @@ export function validatePhotoReference(photo: PhotoReference): string | null {
   if (photo.size <= 0 || photo.size > MAX_PHOTO_SIZE_BYTES) {
     return "Photo size is invalid.";
   }
+  if (/^https?:\/\//i.test(photo.url)) return "Photo reference must be private.";
+  const isMockReference =
+    process.env.PHOTO_STORAGE_MODE === "mock" && photo.url.startsWith("mock://photo/");
+  const isBlobReference = photo.url.startsWith("booking-photos/");
+  if ((!isBlobReference && !isMockReference) || !isSafePhotoReferencePath(photo.url)) {
+    return "Photo reference is not recognized.";
+  }
   return null;
 }
 
@@ -159,7 +170,7 @@ export function mapLeadToColumns(
   const requestedStart = new Date(lead.requestedSlot.start);
   const requestedDate = requestedStart.toISOString().slice(0, 10);
   const requestedTime = lead.requestedSlot.label;
-  const photoRefs = lead.photos.map((photo) => photo.url).join("\n");
+  const photoRefs = formatPhotoReferences(lead.photos);
   const values: Record<string, string> = {
     "Unique ID": leadId,
     "Created At": createdAt,
@@ -205,7 +216,83 @@ function normalizeZip(value: string) {
   return normalizeText(value).replace(/[^\d-]/g, "");
 }
 
+function isSafePhotoReferencePath(value: string) {
+  return !value.includes("..") && !value.includes("\\") && !value.includes("\0");
+}
+
 export function escapeSheetCell(value: string) {
   const normalized = normalizeText(value);
   return /^[=+\-@\t\r]/.test(normalized) ? `'${normalized}` : normalized;
+}
+
+export function formatPhotoReferences(photos: PhotoReference[]) {
+  if (photos.length === 0) return "";
+  return JSON.stringify(photos.map((photo) => ({
+    id: photo.id,
+    name: photo.name,
+    path: photo.url,
+    size: photo.size,
+    contentType: photo.contentType,
+  })));
+}
+
+export function parsePhotoReferences(value: string): PhotoReference[] {
+  const trimmed = value.trim();
+  if (!trimmed) return [];
+  try {
+    const parsed = JSON.parse(trimmed) as Array<{
+      id?: string;
+      name?: string;
+      path?: string;
+      url?: string;
+      size?: number;
+      contentType?: string;
+    }>;
+    if (Array.isArray(parsed)) {
+      return parsed.map((photo) => {
+        const url = photo.path || photo.url || "";
+        return {
+          id: photo.id || url,
+          name: photo.name || "Project photo",
+          url,
+          size: Number(photo.size) || 0,
+          contentType: photo.contentType || "application/octet-stream",
+        };
+      });
+    }
+  } catch {
+    // Fall through to the legacy newline parser.
+  }
+  return value
+    .split(/\n+/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => {
+      try {
+        const parsed = JSON.parse(line) as {
+          id?: string;
+          name?: string;
+          path?: string;
+          url?: string;
+          size?: number;
+          contentType?: string;
+        };
+        const url = parsed.path || parsed.url || "";
+        return {
+          id: parsed.id || url,
+          name: parsed.name || "Project photo",
+          url,
+          size: Number(parsed.size) || 0,
+          contentType: parsed.contentType || "application/octet-stream",
+        };
+      } catch {
+        return {
+          id: line,
+          name: "Project photo",
+          url: line,
+          size: 0,
+          contentType: "application/octet-stream",
+        };
+      }
+    });
 }
