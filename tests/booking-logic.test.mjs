@@ -454,6 +454,26 @@ test("photo access route requires authenticated operations roles and private Blo
   assert.equal(portalSource.includes("https://"), false);
 });
 
+test("booking photo upload uses private Blob client uploads with structured route errors", () => {
+  const routeSource = readFileSync("app/api/booking/photos/route.ts", "utf8");
+  const clientSource = readFileSync("app/components/booking/BookingFlow.tsx", "utf8");
+
+  assert.equal(routeSource.includes("handleUpload"), true);
+  assert.equal(routeSource.includes("request.formData()"), false);
+  assert.equal(routeSource.includes("allowedContentTypes"), true);
+  assert.equal(routeSource.includes("maximumSizeInBytes: MAX_PHOTO_SIZE_BYTES"), true);
+  assert.equal(routeSource.includes('access: "private"'), false);
+  assert.equal(routeSource.includes("safePhotoUploadError"), true);
+  assert.equal(routeSource.includes("jsonError(safeError.message"), true);
+
+  assert.equal(clientSource.includes('@vercel/blob/client'), true);
+  assert.equal(clientSource.includes('access: "private"'), true);
+  assert.equal(clientSource.includes('handleUploadUrl: "/api/booking/photos"'), true);
+  assert.equal(clientSource.includes("readJsonResponse"), true);
+  assert.equal(clientSource.includes("const json = await response.json();"), false);
+  assert.equal(clientSource.includes("readablePhotoUploadError"), true);
+});
+
 test("historical completion row maps financial fields without mutating source headers", () => {
   const headers = [
     "Date",

@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import type { ReactNode } from "react";
 import Link from "next/link";
+import { upload } from "@vercel/blob/client";
 import {
   MAX_PHOTO_AGGREGATE_SIZE_BYTES,
   MAX_PHOTO_COUNT,
@@ -119,7 +120,6 @@ export function BookingFlow() {
     if (!files?.length) return;
     setLoading(true);
     setErrors({});
-    const payload = new FormData();
     const selectedFiles = Array.from(files);
     const currentSize = form.photos.reduce((total, photo) => total + photo.size, 0);
     const selectedSize = selectedFiles.reduce((total, file) => total + file.size, 0);
@@ -139,23 +139,35 @@ export function BookingFlow() {
       return;
     }
     const previews = selectedFiles.map((file) => URL.createObjectURL(file));
-    selectedFiles.forEach((file) => payload.append("photos", file));
+    const uploadedPhotos: PhotoRef[] = [];
     try {
-      const response = await fetch("/api/booking/photos", {
-        method: "POST",
-        body: payload,
-      });
-      const json = await response.json();
-      if (!response.ok) throw new Error(json.message || "Photo upload failed.");
-      const photosWithPreviews = json.photos.map((photo: PhotoRef, index: number) => ({
-        ...photo,
-        previewUrl: previews[index],
-      }));
-      update("photos", [...form.photos, ...photosWithPreviews].slice(0, MAX_PHOTO_COUNT));
+      for (const [index, file] of selectedFiles.entries()) {
+        const name = safeClientFileName(file.name);
+        const blob = await upload(pendingPhotoPath(name), file, {
+          access: "private",
+          contentType: file.type,
+          handleUploadUrl: "/api/booking/photos",
+          clientPayload: JSON.stringify({
+            name,
+            size: file.size,
+            contentType: file.type,
+          }),
+        });
+        uploadedPhotos.push({
+          id: blob.pathname,
+          name,
+          url: blob.pathname,
+          size: file.size,
+          contentType: file.type,
+          previewUrl: previews[index],
+        });
+      }
+      update("photos", [...form.photos, ...uploadedPhotos].slice(0, MAX_PHOTO_COUNT));
     } catch (error) {
+      await cleanupUploadedPhotos(uploadedPhotos);
       previews.forEach((preview) => URL.revokeObjectURL(preview));
       setErrors({
-        photos: error instanceof Error ? error.message : "Photo upload failed.",
+        photos: readablePhotoUploadError(error),
       });
     } finally {
       setLoading(false);
@@ -167,19 +179,20 @@ export function BookingFlow() {
     setErrors({});
     try {
       const response = await fetch("/api/booking/availability");
-      const json = await response.json();
+      const json = await readJsonResponse<{ message?: string; slots?: Slot[] }>(response);
       if (!response.ok) throw new Error(json.message || "Availability is unavailable.");
-      setSlots(json.slots);
+      const nextSlots = json.slots ?? [];
+      setSlots(nextSlots);
       setForm((current) => ({
         ...current,
         requestedSlot:
           current.requestedSlot &&
-          json.slots.some((slot: Slot) => slot.start === current.requestedSlot?.start)
+          nextSlots.some((slot: Slot) => slot.start === current.requestedSlot?.start)
             ? current.requestedSlot
             : null,
       }));
       setSelectedDate((current) =>
-        json.slots.some((slot: Slot) => slot.dateLabel === current) ? current : "",
+        nextSlots.some((slot: Slot) => slot.dateLabel === current) ? current : "",
       );
     } catch (error) {
       setErrors({
@@ -198,11 +211,12 @@ export function BookingFlow() {
     );
     if (photo.previewUrl) URL.revokeObjectURL(photo.previewUrl);
     try {
-      await fetch("/api/booking/photos", {
+      const response = await fetch("/api/booking/photos", {
         method: "DELETE",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ photos: [photo] }),
       });
+      if (!response.ok) await readJsonResponse(response);
     } catch {
       // Cleanup is best-effort; the server never exposes Blob credentials.
     }
@@ -243,9 +257,13 @@ export function BookingFlow() {
           idempotencyKey: form.idempotencyKey,
         }),
       });
-      const json = await response.json();
+      const json = await readJsonResponse<{
+        message?: string;
+        leadId?: string;
+        requestedTime?: string;
+      }>(response);
       if (!response.ok) throw new Error(json.message || "Submission failed.");
-      setSuccess({ leadId: json.leadId, requestedTime: json.requestedTime });
+      setSuccess({ leadId: json.leadId ?? "", requestedTime: json.requestedTime ?? "" });
     } catch (error) {
       setErrors({
         submit:
@@ -632,4 +650,50 @@ function validateStep(step: number, form: FormState) {
 
 function firstName(name: string) {
   return name.trim().split(/\s+/)[0] || "there";
+}
+
+function safeClientFileName(value: string) {
+  return value.replace(/[^a-zA-Z0-9._-]/g, "-").slice(0, 120) || "photo";
+}
+
+function pendingPhotoPath(fileName: string) {
+  const day = new Date().toISOString().slice(0, 10);
+  return `booking-photos/pending/${day}/${crypto.randomUUID()}-${fileName}`;
+}
+
+async function cleanupUploadedPhotos(photos: PhotoRef[]) {
+  if (photos.length === 0) return;
+  try {
+    const response = await fetch("/api/booking/photos", {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ photos }),
+    });
+    if (!response.ok) await readJsonResponse(response);
+  } catch {
+    // Best-effort cleanup after partial upload failure.
+  }
+}
+
+function readablePhotoUploadError(error: unknown) {
+  const message = error instanceof Error ? error.message : "";
+  if (/too large|size/i.test(message)) return "Each photo must be 10 MB or smaller.";
+  if (/content type|unsupported|type/i.test(message)) {
+    return "Use JPG, PNG, WEBP, HEIC, or HEIF images.";
+  }
+  return "Photo upload failed. Please try again or continue without photos.";
+}
+
+async function readJsonResponse<T extends { message?: string }>(response: Response): Promise<T> {
+  const text = await response.text();
+  if (!text) return {} as T;
+  try {
+    return JSON.parse(text) as T;
+  } catch {
+    return {
+      message: response.ok
+        ? "Response could not be read."
+        : "Request failed. Please try again.",
+    } as T;
+  }
 }

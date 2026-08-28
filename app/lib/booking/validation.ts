@@ -12,13 +12,15 @@ export type ValidationResult<T> =
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const ZIP_PATTERN = /^\d{5}(?:-\d{4})?$/;
-const VALID_IMAGE_TYPES = new Set([
+export const VALID_IMAGE_CONTENT_TYPES = [
   "image/jpeg",
   "image/png",
   "image/webp",
   "image/heic",
   "image/heif",
-]);
+] as const;
+
+export const VALID_IMAGE_TYPES = new Set<string>(VALID_IMAGE_CONTENT_TYPES);
 
 export const MAX_PHOTO_COUNT = 10;
 export const MAX_PHOTO_SIZE_BYTES = 10 * 1024 * 1024;
