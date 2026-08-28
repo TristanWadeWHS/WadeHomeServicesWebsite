@@ -8,7 +8,10 @@ import {
   MAX_PHOTO_AGGREGATE_SIZE_BYTES,
   MAX_PHOTO_COUNT,
   MAX_PHOTO_SIZE_BYTES,
+  VALID_IMAGE_TYPES,
 } from "@/app/lib/booking/validation";
+
+const PHOTO_UPLOAD_TIMEOUT_MS = 45_000;
 
 const services = [
   { label: "Junk Removal", icon: "JR" },
@@ -133,6 +136,11 @@ export function BookingFlow() {
       setErrors({ photos: "Each photo must be 10 MB or smaller." });
       return;
     }
+    if (selectedFiles.some((file) => !VALID_IMAGE_TYPES.has(file.type))) {
+      setLoading(false);
+      setErrors({ photos: "Use JPG, PNG, WEBP, HEIC, or HEIF images." });
+      return;
+    }
     if (currentSize + selectedSize > MAX_PHOTO_AGGREGATE_SIZE_BYTES) {
       setLoading(false);
       setErrors({ photos: "Upload no more than 50 MB of photos total." });
@@ -143,16 +151,24 @@ export function BookingFlow() {
     try {
       for (const [index, file] of selectedFiles.entries()) {
         const name = safeClientFileName(file.name);
-        const blob = await upload(pendingPhotoPath(name), file, {
-          access: "private",
-          contentType: file.type,
-          handleUploadUrl: "/api/booking/photos",
-          clientPayload: JSON.stringify({
-            name,
-            size: file.size,
+        const abortController = new AbortController();
+        const timeout = window.setTimeout(() => abortController.abort(), PHOTO_UPLOAD_TIMEOUT_MS);
+        let blob;
+        try {
+          blob = await upload(pendingPhotoPath(name), file, {
+            access: "private",
             contentType: file.type,
-          }),
-        });
+            handleUploadUrl: "/api/booking/photos",
+            abortSignal: abortController.signal,
+            clientPayload: JSON.stringify({
+              name,
+              size: file.size,
+              contentType: file.type,
+            }),
+          });
+        } finally {
+          window.clearTimeout(timeout);
+        }
         uploadedPhotos.push({
           id: blob.pathname,
           name,
@@ -409,7 +425,10 @@ export function BookingFlow() {
                 type="file"
                 accept="image/jpeg,image/png,image/webp,image/heic,image/heif"
                 multiple
-                onChange={(event) => uploadPhotos(event.target.files)}
+                onChange={(event) => {
+                  void uploadPhotos(event.target.files);
+                  event.currentTarget.value = "";
+                }}
               />
               <span>{loading ? "Uploading..." : "Choose or drag photos"}</span>
               <small>Optional, maximum {MAX_PHOTO_COUNT} photos.</small>
@@ -677,6 +696,12 @@ async function cleanupUploadedPhotos(photos: PhotoRef[]) {
 
 function readablePhotoUploadError(error: unknown) {
   const message = error instanceof Error ? error.message : "";
+  if (error instanceof DOMException && error.name === "AbortError") {
+    return "Photo upload timed out. Please try again or continue without photos.";
+  }
+  if (/abort|timed out|timeout/i.test(message)) {
+    return "Photo upload timed out. Please try again or continue without photos.";
+  }
   if (/too large|size/i.test(message)) return "Each photo must be 10 MB or smaller.";
   if (/content type|unsupported|type/i.test(message)) {
     return "Use JPG, PNG, WEBP, HEIC, or HEIF images.";
