@@ -16,6 +16,7 @@ import {
   setIdempotentResponse,
   verifyTurnstile,
 } from "@/app/lib/booking/security";
+import { associatePhotosWithLead, cleanupPhotos } from "@/app/lib/booking/storage";
 import { createLeadId, validateSubmission } from "@/app/lib/booking/validation";
 
 export const runtime = "nodejs";
@@ -58,16 +59,23 @@ export async function POST(request: Request) {
   }
 
   const leadId = createLeadId();
+  let associatedPhotos = lead.photos;
   try {
+    associatedPhotos = await associatePhotosWithLead(leadId, lead.photos);
+    const leadWithPhotos = {
+      ...lead,
+      photos: associatedPhotos,
+    };
     const busy = await getCalendarBusyWindows(
-      lead.requestedSlot.start,
-      lead.requestedSlot.end,
+      leadWithPhotos.requestedSlot.start,
+      leadWithPhotos.requestedSlot.end,
     );
-    if (!isSlotStillAvailable(lead.requestedSlot.start, lead.requestedSlot.end, busy)) {
+    if (!isSlotStillAvailable(leadWithPhotos.requestedSlot.start, leadWithPhotos.requestedSlot.end, busy)) {
+      await cleanupPhotos(associatedPhotos);
       return jsonError("That time is no longer available. Please choose another.", 409);
     }
 
-    await appendLeadToSheet(leadId, lead);
+    await appendLeadToSheet(leadId, leadWithPhotos);
     const response = {
       ok: true,
       leadId,
@@ -76,7 +84,7 @@ export async function POST(request: Request) {
     };
     setIdempotentResponse(lead.idempotencyKey, response);
 
-    const notification = await sendOwnerNewLeadNotification(leadId, lead);
+    const notification = await sendOwnerNewLeadNotification(leadId, leadWithPhotos);
     if (!notification.ok) {
       logServerError("booking.owner-notification", new Error(notification.reason), {
         leadId,
@@ -98,6 +106,7 @@ export async function POST(request: Request) {
 
     return Response.json(response);
   } catch (error) {
+    await cleanupPhotos(associatedPhotos);
     logServerError("booking.submit", error, { ip, leadId });
     return jsonError(
       "We could not save your request right now. Please try again or call Wade Home Services.",

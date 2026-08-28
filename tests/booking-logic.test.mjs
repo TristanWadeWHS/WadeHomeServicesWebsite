@@ -53,9 +53,12 @@ import {
 import {
   createLeadId,
   escapeSheetCell,
+  formatPhotoReferences,
   MAX_PHOTO_AGGREGATE_SIZE_BYTES,
   MAX_PHOTO_COUNT,
+  MAX_PHOTO_SIZE_BYTES,
   mapLeadToColumns,
+  parsePhotoReferences,
   validatePhotoFile,
   validateSubmission,
 } from "../app/lib/booking/validation.ts";
@@ -76,7 +79,7 @@ function validSubmission(overrides = {}) {
       {
         id: "photo-1",
         name: "garage.jpg",
-        url: "mock://photo/garage.jpg",
+        url: "booking-photos/pending/garage.jpg",
         size: 1000,
         contentType: "image/jpeg",
       },
@@ -363,13 +366,115 @@ test("operations sessions support owner and field manager roles without exposing
   restoreOperationsEnv(previous);
 });
 
-test("photo limits enforce Version 4.2 count and aggregate requirements", () => {
+test("photo limits enforce Version 4.4 count, size, aggregate, and private-reference requirements", () => {
   assert.equal(MAX_PHOTO_COUNT, 10);
+  assert.equal(MAX_PHOTO_SIZE_BYTES, 10 * 1024 * 1024);
   assert.equal(MAX_PHOTO_AGGREGATE_SIZE_BYTES, 50 * 1024 * 1024);
   const file = new File(["x"], "photo.jpg", { type: "image/jpeg" });
   assert.equal(validatePhotoFile(file), null);
   const badFile = new File(["x"], "photo.gif", { type: "image/gif" });
   assert.match(validatePhotoFile(badFile), /JPG|PNG|WEBP|HEIC|HEIF/);
+  const tooLargeFile = new File([new Uint8Array(MAX_PHOTO_SIZE_BYTES + 1)], "large.jpg", {
+    type: "image/jpeg",
+  });
+  assert.match(validatePhotoFile(tooLargeFile), /10 MB/);
+
+  const tooMany = validateSubmission(validSubmission({
+    photos: Array.from({ length: 11 }, (_, index) => ({
+      id: `photo-${index}`,
+      name: `photo-${index}.jpg`,
+      url: `booking-photos/pending/photo-${index}.jpg`,
+      size: 1000,
+      contentType: "image/jpeg",
+    })),
+  }));
+  assert.equal(tooMany.ok, false);
+  assert.match(tooMany.errors.photos, /10 photos/);
+
+  const tooMuchAggregate = validateSubmission(validSubmission({
+    photos: Array.from({ length: 6 }, (_, index) => ({
+      id: `photo-${index}`,
+      name: `photo-${index}.jpg`,
+      url: `booking-photos/pending/photo-${index}.jpg`,
+      size: 9 * 1024 * 1024,
+      contentType: "image/jpeg",
+    })),
+  }));
+  assert.equal(tooMuchAggregate.ok, false);
+  assert.match(tooMuchAggregate.errors.photos, /50 MB/);
+
+  const publicPhoto = validateSubmission(validSubmission({
+    photos: [{
+      id: "public-photo",
+      name: "public.jpg",
+      url: "https://blob.example/public.jpg",
+      size: 1000,
+      contentType: "image/jpeg",
+    }],
+  }));
+  assert.equal(publicPhoto.ok, false);
+  assert.match(publicPhoto.errors["photo-0"], /private/);
+});
+
+test("lead photo association stores private metadata instead of public image data", () => {
+  const photos = [{
+    id: "booking-photos/leads/WHS-20260827-ABC123/photo.jpg",
+    name: "project.jpg",
+    url: "booking-photos/leads/WHS-20260827-ABC123/photo.jpg",
+    size: 1234,
+    contentType: "image/jpeg",
+  }];
+  const serialized = formatPhotoReferences(photos);
+  assert.equal(serialized.includes("https://"), false);
+  assert.equal(serialized.includes("data:image"), false);
+  const parsed = parsePhotoReferences(serialized);
+  assert.deepEqual(parsed, photos);
+
+  const result = validateSubmission(validSubmission({ photos }));
+  assert.equal(result.ok, true);
+  const row = mapLeadToColumns("WHS-20260827-ABC123", result.value, REQUIRED_SHEET_COLUMNS);
+  const sheetValue = row[REQUIRED_SHEET_COLUMNS.indexOf("Photo URLs / Photo References")];
+  assert.match(sheetValue, /booking-photos\/leads\/WHS-20260827-ABC123/);
+  assert.equal(sheetValue.includes("data:image"), false);
+});
+
+test("photo access route requires authenticated operations roles and private Blob reads", () => {
+  const routeSource = readFileSync("app/api/operations/photos/route.ts", "utf8");
+  assert.equal(routeSource.includes("requireAnyRole"), true);
+  assert.equal(routeSource.includes("ROLE_OWNER"), true);
+  assert.equal(routeSource.includes("ROLE_FIELD_MANAGER"), true);
+  assert.equal(routeSource.includes("getLeadById"), true);
+  assert.equal(routeSource.includes("getPrivatePhoto"), true);
+  assert.equal(routeSource.includes("booking-photos/leads/${lead.leadId}/"), true);
+  assert.equal(routeSource.includes("BLOB_READ_WRITE_TOKEN"), false);
+
+  const portalSource = readFileSync("app/login/OperationsPortalClient.tsx", "utf8");
+  assert.equal(portalSource.includes("/api/operations/photos?leadId="), true);
+  assert.equal(portalSource.includes("lead.photoReferences ||"), false);
+  assert.equal(portalSource.includes("https://"), false);
+});
+
+test("booking photo upload uses private Blob client uploads with structured route errors", () => {
+  const routeSource = readFileSync("app/api/booking/photos/route.ts", "utf8");
+  const clientSource = readFileSync("app/components/booking/BookingFlow.tsx", "utf8");
+  const nextConfigSource = readFileSync("next.config.ts", "utf8");
+
+  assert.equal(routeSource.includes("handleUpload"), true);
+  assert.equal(routeSource.includes("request.formData()"), false);
+  assert.equal(routeSource.includes("allowedContentTypes"), true);
+  assert.equal(routeSource.includes("maximumSizeInBytes: MAX_PHOTO_SIZE_BYTES"), true);
+  assert.equal(routeSource.includes("onUploadCompleted"), false);
+  assert.equal(routeSource.includes('access: "private"'), false);
+  assert.equal(routeSource.includes("safePhotoUploadError"), true);
+  assert.equal(routeSource.includes("jsonError(safeError.message"), true);
+
+  assert.equal(clientSource.includes('@vercel/blob/client'), true);
+  assert.equal(clientSource.includes('access: "private"'), true);
+  assert.equal(clientSource.includes('handleUploadUrl: "/api/booking/photos"'), true);
+  assert.equal(clientSource.includes("readJsonResponse"), true);
+  assert.equal(clientSource.includes("const json = await response.json();"), false);
+  assert.equal(clientSource.includes("readablePhotoUploadError"), true);
+  assert.equal(nextConfigSource.includes("connect-src 'self' https://challenges.cloudflare.com https://vercel.com"), true);
 });
 
 test("historical completion row maps financial fields without mutating source headers", () => {
@@ -771,6 +876,7 @@ test("approved Calendar event payload uses opaque busy semantics", () => {
       appointmentType: "On-Site Estimate",
       projectDescription: "Test project description.",
       photoReferences: "",
+      photos: [],
       requestedDate: "2026-08-15",
       requestedTime: "Sat, Aug 15, 10:00 AM",
       source: "Website",
@@ -905,6 +1011,7 @@ function sheetLeadFixture(overrides = {}) {
     appointmentType: "On-Site Estimate",
     projectDescription: "Test project description.",
     photoReferences: "",
+    photos: [],
     requestedDate: "2026-08-15",
     requestedTime: "Sat, Aug 15, 10:00 AM",
     source: "Website",

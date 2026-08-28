@@ -12,7 +12,7 @@ import {
 import type { BusyWindow } from "./scheduling";
 import { isSlotStillAvailable } from "./scheduling";
 import type { NormalizedLead, OwnerDecisionResult, SheetLead } from "./types";
-import { escapeSheetCell, mapLeadToColumns } from "./validation";
+import { escapeSheetCell, mapLeadToColumns, parsePhotoReferences } from "./validation";
 import { sendCustomerApprovalConfirmation } from "./ownerNotifications";
 
 export const HISTORICAL_SPREADSHEET_ID =
@@ -768,6 +768,7 @@ function sheetRowToLead(
     appointmentType: value("Appointment Type"),
     projectDescription: value("Project Description"),
     photoReferences: value("Photo URLs / Photo References"),
+    photos: parsePhotoReferences(value("Photo URLs / Photo References")),
     requestedDate: value("Requested Date"),
     requestedTime: value("Requested Time"),
     source: value("Source"),

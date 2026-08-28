@@ -534,9 +534,28 @@ function LeadDetails({ lead }: { lead: SheetLead }) {
       <div><dt>Service Type(s)</dt><dd>{lead.services}</dd></div>
       <div><dt>Appointment Type</dt><dd>{lead.appointmentType}</dd></div>
       <div><dt>Requested Time</dt><dd>{lead.requestedDate} / {lead.requestedTime}</dd></div>
-      <div><dt>Photos</dt><dd>{lead.photoReferences || "None provided"}</dd></div>
+      <div><dt>Photos</dt><dd><LeadPhotos lead={lead} /></dd></div>
       <div><dt>Description</dt><dd>{lead.projectDescription}</dd></div>
     </dl>
+  );
+}
+
+function LeadPhotos({ lead }: { lead: SheetLead }) {
+  if (lead.photos.length === 0) return "None provided";
+  return (
+    <div className="operations-photo-list">
+      {lead.photos.map((photo, index) => (
+        <a
+          className="operations-photo-link"
+          href={`/api/operations/photos?leadId=${encodeURIComponent(lead.leadId)}&photoId=${encodeURIComponent(photo.id)}`}
+          key={`${photo.id}-${index}`}
+          rel="noreferrer"
+          target="_blank"
+        >
+          {photo.name || `Photo ${index + 1}`}
+        </a>
+      ))}
+    </div>
   );
 }
 
