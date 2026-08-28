@@ -462,6 +462,7 @@ test("booking photo upload uses private Blob client uploads with structured rout
   assert.equal(routeSource.includes("request.formData()"), false);
   assert.equal(routeSource.includes("allowedContentTypes"), true);
   assert.equal(routeSource.includes("maximumSizeInBytes: MAX_PHOTO_SIZE_BYTES"), true);
+  assert.equal(routeSource.includes("onUploadCompleted"), false);
   assert.equal(routeSource.includes('access: "private"'), false);
   assert.equal(routeSource.includes("safePhotoUploadError"), true);
   assert.equal(routeSource.includes("jsonError(safeError.message"), true);

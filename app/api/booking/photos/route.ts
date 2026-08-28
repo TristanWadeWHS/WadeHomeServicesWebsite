@@ -43,9 +43,6 @@ export async function POST(request: Request) {
           tokenPayload: clientPayload,
         };
       },
-      onUploadCompleted: async () => {
-        // The booking submission associates pending private blobs with the final Lead ID.
-      },
     });
     return Response.json(result);
   } catch (error) {
