@@ -20,7 +20,7 @@ const nextConfig: NextConfig = {
           "img-src 'self' data: blob: https://i.ytimg.com",
           "media-src 'self' blob:",
           "frame-src https://www.youtube.com https://www.youtube-nocookie.com",
-          "connect-src 'self' https://challenges.cloudflare.com",
+          "connect-src 'self' https://challenges.cloudflare.com https://vercel.com",
           "script-src 'self' 'unsafe-inline'",
           "style-src 'self' 'unsafe-inline'",
           "form-action 'self'",

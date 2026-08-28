@@ -457,6 +457,7 @@ test("photo access route requires authenticated operations roles and private Blo
 test("booking photo upload uses private Blob client uploads with structured route errors", () => {
   const routeSource = readFileSync("app/api/booking/photos/route.ts", "utf8");
   const clientSource = readFileSync("app/components/booking/BookingFlow.tsx", "utf8");
+  const nextConfigSource = readFileSync("next.config.ts", "utf8");
 
   assert.equal(routeSource.includes("handleUpload"), true);
   assert.equal(routeSource.includes("request.formData()"), false);
@@ -473,6 +474,7 @@ test("booking photo upload uses private Blob client uploads with structured rout
   assert.equal(clientSource.includes("readJsonResponse"), true);
   assert.equal(clientSource.includes("const json = await response.json();"), false);
   assert.equal(clientSource.includes("readablePhotoUploadError"), true);
+  assert.equal(nextConfigSource.includes("connect-src 'self' https://challenges.cloudflare.com https://vercel.com"), true);
 });
 
 test("historical completion row maps financial fields without mutating source headers", () => {
