@@ -42,6 +42,70 @@ export function buildAvailabilitySlots(
   return slots.slice(0, 40);
 }
 
+export function buildAvailabilitySlotsForDate(
+  dateValue: string,
+  busyWindows: BusyWindow[],
+  now = new Date(),
+): AvailabilitySlot[] {
+  const config = getSchedulingConfig();
+  const date = parseDateValue(dateValue);
+  if (!date) return [];
+
+  const slots: AvailabilitySlot[] = [];
+  const earliest = new Date(
+    now.getTime() + config.minimumAdvanceHours * 60 * 60 * 1000,
+  );
+
+  for (
+    let minutes = config.openingHour * 60;
+    minutes + config.appointmentMinutes <= config.closingHour * 60;
+    minutes += config.intervalMinutes
+  ) {
+    const start = makeDateInTimeZone(
+      date.year,
+      date.month,
+      date.day,
+      Math.floor(minutes / 60),
+      minutes % 60,
+      config.timezone,
+    );
+    const end = new Date(start.getTime() + config.appointmentMinutes * 60 * 1000);
+    if (start < earliest) continue;
+    if (overlapsBusy(start, end, busyWindows, config.bufferMinutes)) continue;
+
+    slots.push({
+      start: start.toISOString(),
+      end: end.toISOString(),
+      label: formatSlotLabel(start, config.timezone),
+      dateLabel: formatDateLabel(start, config.timezone),
+    });
+  }
+
+  return slots;
+}
+
+export function isValidDateValue(dateValue: string) {
+  return parseDateValue(dateValue) !== null;
+}
+
+export function isPastBookingDate(dateValue: string, now = new Date()) {
+  const config = getSchedulingConfig();
+  return dateValue < formatDateValue(now, config.timezone);
+}
+
+export function calendarQueryRangeForDate(dateValue: string) {
+  const config = getSchedulingConfig();
+  const date = parseDateValue(dateValue);
+  if (!date) return null;
+
+  const start = makeDateInTimeZone(date.year, date.month, date.day, 0, 0, config.timezone);
+  const end = makeDateInTimeZone(date.year, date.month, date.day + 1, 0, 0, config.timezone);
+  return {
+    timeMin: start.toISOString(),
+    timeMax: end.toISOString(),
+  };
+}
+
 export function isSlotStillAvailable(
   requestedStart: string,
   requestedEnd: string,
@@ -102,6 +166,23 @@ function dateParts(date: Date, timezone: string) {
   };
 }
 
+function parseDateValue(dateValue: string) {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateValue);
+  if (!match) return null;
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const parsed = new Date(Date.UTC(year, month - 1, day));
+  if (
+    parsed.getUTCFullYear() !== year ||
+    parsed.getUTCMonth() !== month - 1 ||
+    parsed.getUTCDate() !== day
+  ) {
+    return null;
+  }
+  return { year, month, day };
+}
+
 function makeDateInTimeZone(
   year: number,
   month: number,
@@ -158,4 +239,13 @@ function formatDateLabel(date: Date, timezone: string) {
     day: "numeric",
     timeZone: timezone,
   }).format(date);
+}
+
+function formatDateValue(date: Date, timezone: string) {
+  const parts = dateParts(date, timezone);
+  return [
+    String(parts.year).padStart(4, "0"),
+    String(parts.month).padStart(2, "0"),
+    String(parts.day).padStart(2, "0"),
+  ].join("-");
 }

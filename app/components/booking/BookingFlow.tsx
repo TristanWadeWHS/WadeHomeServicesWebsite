@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import type { ReactNode } from "react";
 import Link from "next/link";
 import { upload } from "@vercel/blob/client";
@@ -115,7 +115,6 @@ export function BookingFlow() {
       setErrors(validationErrors);
       return;
     }
-    if (step === 5 && slots.length === 0) await loadAvailability();
     setStep((current) => Math.min(current + 1, totalSteps - 1));
   }
 
@@ -190,15 +189,24 @@ export function BookingFlow() {
     }
   }
 
-  async function loadAvailability() {
+  async function loadAvailability(dateValue = selectedDate) {
+    if (!dateValue) {
+      setSlots([]);
+      update("requestedSlot", null);
+      setErrors({ requestedSlot: "Choose a preferred date first." });
+      return;
+    }
     setLoading(true);
     setErrors({});
     try {
-      const response = await fetch("/api/booking/availability");
+      const response = await fetch(
+        `/api/booking/availability?date=${encodeURIComponent(dateValue)}`,
+      );
       const json = await readJsonResponse<{ message?: string; slots?: Slot[] }>(response);
       if (!response.ok) throw new Error(json.message || "Availability is unavailable.");
       const nextSlots = json.slots ?? [];
       setSlots(nextSlots);
+      setSelectedDate(dateValue);
       setForm((current) => ({
         ...current,
         requestedSlot:
@@ -207,9 +215,6 @@ export function BookingFlow() {
             ? current.requestedSlot
             : null,
       }));
-      setSelectedDate((current) =>
-        nextSlots.some((slot: Slot) => slot.dateLabel === current) ? current : "",
-      );
     } catch (error) {
       setErrors({
         requestedSlot:
@@ -292,13 +297,8 @@ export function BookingFlow() {
     }
   }
 
-  const groupedSlots = useMemo(() => {
-    return slots.reduce<Record<string, Slot[]>>((groups, slot) => {
-      groups[slot.dateLabel] = [...(groups[slot.dateLabel] ?? []), slot];
-      return groups;
-    }, {});
-  }, [slots]);
-  const selectedDateSlots = selectedDate ? groupedSlots[selectedDate] ?? [] : [];
+  const selectedDateSlots = selectedDate ? slots : [];
+  const noTimesAvailable = Boolean(selectedDate && !loading && selectedDateSlots.length === 0);
 
   if (success) {
     return (
@@ -479,33 +479,35 @@ export function BookingFlow() {
             title="Choose a preferred request time."
             subtitle="This does not confirm the appointment. Wade Home Services will review and confirm with you."
           >
-            <button className="button button--ghost" type="button" onClick={loadAvailability}>
+            <button
+              className="button button--ghost"
+              disabled={!selectedDate || loading}
+              type="button"
+              onClick={() => loadAvailability(selectedDate)}
+            >
               Refresh Available Times
             </button>
             <FieldError message={errors.requestedSlot} />
             <div className="field-grid availability-selectors">
               <label className="field">
                 <span>Preferred Date</span>
-                <select
+                <input
+                  type="date"
+                  min={todayDateValue()}
                   value={selectedDate}
                   onChange={(event) => {
                     const nextDate = event.target.value;
                     setSelectedDate(nextDate);
+                    setSlots([]);
                     update("requestedSlot", null);
+                    if (nextDate) void loadAvailability(nextDate);
                   }}
-                >
-                  <option value="">Select a date</option>
-                  {Object.keys(groupedSlots).map((date) => (
-                    <option key={date} value={date}>
-                      {date}
-                    </option>
-                  ))}
-                </select>
+                />
               </label>
               <label className="field">
                 <span>Preferred Time</span>
                 <select
-                  disabled={!selectedDate}
+                  disabled={!selectedDate || loading || selectedDateSlots.length === 0}
                   value={form.requestedSlot?.start ?? ""}
                   onChange={(event) => {
                     const slot = selectedDateSlots.find(
@@ -523,6 +525,14 @@ export function BookingFlow() {
                 </select>
               </label>
             </div>
+            {loading && selectedDate ? (
+              <p className="form-note">Checking available times...</p>
+            ) : null}
+            {noTimesAvailable ? (
+              <p className="form-note">
+                No times are available for this date. Please choose another date.
+              </p>
+            ) : null}
           </StepBlock>
         ) : null}
 
@@ -669,6 +679,12 @@ function validateStep(step: number, form: FormState) {
 
 function firstName(name: string) {
   return name.trim().split(/\s+/)[0] || "there";
+}
+
+function todayDateValue() {
+  const now = new Date();
+  const localDate = new Date(now.getTime() - now.getTimezoneOffset() * 60_000);
+  return localDate.toISOString().slice(0, 10);
 }
 
 function safeClientFileName(value: string) {
