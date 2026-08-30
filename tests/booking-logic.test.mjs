@@ -20,6 +20,7 @@ import {
 } from "../app/lib/booking/ownerNotifications.ts";
 import {
   buildAvailabilitySlots,
+  buildAvailabilitySlotsForDate,
   isSlotStillAvailable,
 } from "../app/lib/booking/scheduling.ts";
 import {
@@ -670,10 +671,12 @@ test("booking request time uses date and time dropdowns from availability slots"
 
   assert.equal(source.includes("Preferred Date"), true);
   assert.equal(source.includes("Preferred Time"), true);
+  assert.equal(source.includes('type="date"'), true);
+  assert.equal(source.includes("todayDateValue"), true);
   assert.equal(source.includes("setSelectedDate"), true);
-  assert.equal(source.includes("groupedSlots[selectedDate]"), true);
-  assert.equal(source.includes('fetch("/api/booking/availability")'), true);
+  assert.equal(source.includes("/api/booking/availability?date="), true);
   assert.equal(source.includes("Refresh Available Times"), true);
+  assert.equal(source.includes("No times are available for this date."), true);
   assert.equal(source.includes("This does not confirm the appointment"), true);
   assert.equal(source.includes("slot-button"), false);
 });
@@ -824,6 +827,23 @@ test("availability transformation hides private Calendar details and filters bus
   const slots = buildAvailabilitySlots(busy, now);
   assert.ok(slots.length > 0);
   assert.equal(Object.hasOwn(slots[0], "summary"), false);
+});
+
+test("date-specific availability supports future dates beyond the default horizon", () => {
+  process.env.BOOKING_OPENING_HOUR = "7";
+  process.env.BOOKING_CLOSING_HOUR = "10";
+  process.env.BOOKING_APPOINTMENT_MINUTES = "60";
+  process.env.BOOKING_INTERVAL_MINUTES = "60";
+  process.env.BOOKING_MIN_ADVANCE_HOURS = "0";
+  process.env.BOOKING_HORIZON_DAYS = "0";
+  process.env.BOOKING_TIMEZONE = "America/Los_Angeles";
+
+  const now = new Date("2026-08-11T07:00:00.000Z");
+  const slots = buildAvailabilitySlotsForDate("2026-09-15", [], now);
+
+  assert.equal(slots.length, 3);
+  assert.equal(slots.every((slot) => slot.dateLabel === "Tuesday, September 15"), true);
+  assert.equal(slots[0].label, "Tue, Sep 15, 7:00 AM");
 });
 
 test("busy Calendar interval removes every overlapping availability slot", () => {
