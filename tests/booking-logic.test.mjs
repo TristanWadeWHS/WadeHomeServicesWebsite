@@ -5,6 +5,8 @@ import {
   CLOSED_STATUS,
   LEAD_SOURCE,
   LEAD_STATUS,
+  MANUAL_LEAD_SOURCE,
+  MANUAL_LEAD_STATUS,
   REQUIRED_SHEET_COLUMNS,
 } from "../app/lib/booking/config.ts";
 import {
@@ -59,7 +61,9 @@ import {
   MAX_PHOTO_COUNT,
   MAX_PHOTO_SIZE_BYTES,
   mapLeadToColumns,
+  mapManualLeadToColumns,
   parsePhotoReferences,
+  validateManualLeadInput,
   validatePhotoFile,
   validateSubmission,
 } from "../app/lib/booking/validation.ts";
@@ -253,10 +257,112 @@ test("operations portal uses owner-only workflow tabs", () => {
   assert.equal(clientSource.includes('role="tab"'), true);
   assert.equal(clientSource.includes("Requests"), true);
   assert.equal(clientSource.includes("Active Jobs"), true);
+  assert.equal(clientSource.includes("Leads"), true);
+  assert.equal(clientSource.includes("+ Add Lead"), true);
   assert.equal(clientSource.includes('useState<PortalTab>(isOwner ? "requests" : "active")'), true);
   assert.equal(clientSource.includes('activeTab === "requests"'), true);
   assert.equal(clientSource.includes('activeTab === "active"'), true);
+  assert.equal(clientSource.includes('activeTab === "leads"'), true);
   assert.equal(clientSource.includes("isOwner ? ("), true);
+});
+
+test("operations login uses password wording without changing submit action", () => {
+  const source = readFileSync("app/login/page.tsx", "utf8");
+
+  assert.equal(source.includes("<span>Password</span>"), true);
+  assert.equal(source.includes("Access token"), false);
+  assert.equal(source.includes("Open Operations Portal"), true);
+  assert.equal(source.includes('action="/api/session/login"'), true);
+});
+
+test("mobile header has collapsible navigation without changing desktop nav destinations", () => {
+  const shellSource = readFileSync("app/components/SiteShell.tsx", "utf8");
+  const cssSource = readFileSync("app/globals.css", "utf8");
+
+  assert.equal(shellSource.includes("mobile-menu-toggle"), true);
+  assert.equal(shellSource.includes("mobile-nav-panel"), true);
+  assert.equal(shellSource.includes("aria-expanded={mobileNavOpen}"), true);
+  assert.equal(shellSource.includes("setMobileNavOpen(false)"), true);
+  assert.equal(shellSource.includes("document.addEventListener(\"pointerdown\""), true);
+  assert.equal(shellSource.includes('href="tel:+19494245605"'), true);
+  assert.equal(cssSource.includes("@media (max-width: 980px)"), true);
+  assert.equal(cssSource.includes(".site-nav,"), true);
+  assert.equal(cssSource.includes('prefers-reduced-motion: reduce'), true);
+});
+
+test("manual owner leads use canonical sheet columns and owner-only API", () => {
+  const routeSource = readFileSync("app/api/owner/leads/route.ts", "utf8");
+  const loginSource = readFileSync("app/login/page.tsx", "utf8");
+  const googleSource = readFileSync("app/lib/booking/google.ts", "utf8");
+
+  assert.equal(routeSource.includes("requireRole(request, ROLE_OWNER)"), true);
+  assert.equal(routeSource.includes("validateManualLeadInput"), true);
+  assert.equal(routeSource.includes("sendOwnerNewLeadNotification"), false);
+  assert.equal(routeSource.includes("createCalendarEvent"), false);
+  assert.equal(loginSource.includes("getManualLeads"), true);
+  assert.equal(googleSource.includes("getManualLeads"), true);
+  assert.equal(googleSource.includes("MANUAL_LEAD_STATUS"), true);
+
+  const result = validateManualLeadInput({
+    name: "=Prospect",
+    opportunityInfo: "+Garage cleanout lead",
+    phone: "",
+    email: "",
+    streetAddress: "@Address",
+    city: "Mission Viejo",
+    notes: "-Call next week",
+  });
+  assert.equal(result.ok, true);
+  if (!result.ok) return;
+
+  const row = mapManualLeadToColumns("WHS-20260905-MANUAL", result.value, REQUIRED_SHEET_COLUMNS);
+  assert.equal(row[REQUIRED_SHEET_COLUMNS.indexOf("Status")], MANUAL_LEAD_STATUS);
+  assert.equal(row[REQUIRED_SHEET_COLUMNS.indexOf("Source")], MANUAL_LEAD_SOURCE);
+  assert.equal(row[REQUIRED_SHEET_COLUMNS.indexOf("Name")], "'=Prospect");
+  assert.equal(row[REQUIRED_SHEET_COLUMNS.indexOf("Project Description")], "'+Garage cleanout lead");
+  assert.equal(row[REQUIRED_SHEET_COLUMNS.indexOf("Internal Notes")], "Manual owner lead. -Call next week");
+});
+
+test("manual lead conversion and decline are owner-only persisted transitions", () => {
+  const clientSource = readFileSync("app/login/OperationsPortalClient.tsx", "utf8");
+  const convertRoute = readFileSync("app/api/owner/leads/convert/route.ts", "utf8");
+  const declineRoute = readFileSync("app/api/owner/leads/decline/route.ts", "utf8");
+  const googleSource = readFileSync("app/lib/booking/google.ts", "utf8");
+
+  assert.equal(clientSource.includes("Convert to Active Job"), true);
+  assert.equal(clientSource.includes('onUpdate(lead.leadId, "convert", { approvedAmount })'), true);
+  assert.equal(clientSource.includes("Decline Lead"), true);
+  assert.equal(clientSource.includes("Lead converted to active job."), true);
+  assert.equal(clientSource.includes("Lead declined."), true);
+  assert.equal(clientSource.includes("Linked Job"), true);
+  assert.equal(clientSource.includes("Decision"), true);
+  assert.equal(clientSource.includes("Decline Reason"), true);
+  assert.equal(clientSource.includes("setManualLeads"), true);
+  assert.equal(clientSource.includes("setJobLeads"), true);
+
+  assert.equal(convertRoute.includes("requireRole(request, ROLE_OWNER)"), true);
+  assert.equal(declineRoute.includes("requireRole(request, ROLE_OWNER)"), true);
+  assert.equal(convertRoute.includes("isSameOriginRequest"), true);
+  assert.equal(declineRoute.includes("isSameOriginRequest"), true);
+  assert.equal(convertRoute.includes("convertManualLeadToActiveJob"), true);
+  assert.equal(convertRoute.includes('form.get("approvedAmount")'), true);
+  assert.equal(declineRoute.includes("declineManualLead"), true);
+  assert.equal(convertRoute.includes("jsonError(\"Lead could not be converted safely.\""), true);
+  assert.equal(declineRoute.includes("jsonError(\"Lead could not be declined safely.\""), true);
+
+  assert.equal(googleSource.includes("export async function convertManualLeadToActiveJob"), true);
+  assert.equal(googleSource.includes('parseNonNegativeMoney(approvedAmountValue, "Approved amount")'), true);
+  assert.equal(googleSource.includes('"Approved Amount": formatMoney(approvedAmount.value)'), true);
+  assert.equal(googleSource.includes("export async function declineManualLead"), true);
+  assert.equal(googleSource.includes("lead.status === APPROVED_STATUS && lead.operationalStatus === APPROVED_STATUS"), true);
+  assert.equal(googleSource.includes("lead.status === DECLINED_STATUS"), true);
+  assert.equal(googleSource.includes("lead.status !== MANUAL_LEAD_STATUS"), true);
+  assert.equal(googleSource.includes("Linked job ID: ${lead.leadId}"), true);
+  assert.equal(googleSource.includes("Conversion timestamp: ${timestamp}"), true);
+  assert.equal(googleSource.includes('"Operational Status": APPROVED_STATUS'), true);
+  assert.equal(googleSource.includes('"Operational Status": DECLINED_STATUS'), true);
+  assert.equal(googleSource.includes('"Decline Reason": declineReason'), true);
+  assert.equal(googleSource.includes("sendOwnerNewLeadNotification"), false);
 });
 
 test("operations Sheet schema includes owner and close metadata without duplicate owner columns", () => {

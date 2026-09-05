@@ -7,12 +7,19 @@ import {
   IN_PROGRESS_STATUS,
   LEAD_STATUS,
   LEGACY_APPROVED_STATUS,
+  MANUAL_LEAD_SOURCE,
+  MANUAL_LEAD_STATUS,
   REQUIRED_SHEET_COLUMNS,
 } from "./config";
 import type { BusyWindow } from "./scheduling";
 import { isSlotStillAvailable } from "./scheduling";
-import type { NormalizedLead, OwnerDecisionResult, SheetLead } from "./types";
-import { escapeSheetCell, mapLeadToColumns, parsePhotoReferences } from "./validation";
+import type { NormalizedLead, NormalizedManualLead, OwnerDecisionResult, SheetLead } from "./types";
+import {
+  escapeSheetCell,
+  mapLeadToColumns,
+  mapManualLeadToColumns,
+  parsePhotoReferences,
+} from "./validation";
 import { sendCustomerApprovalConfirmation } from "./ownerNotifications";
 
 export const HISTORICAL_SPREADSHEET_ID =
@@ -33,6 +40,14 @@ export type CloseRequestInput = {
 };
 
 export type JobStatusInput = typeof APPROVED_STATUS | typeof IN_PROGRESS_STATUS;
+export type ManualLeadDecisionResult = {
+  ok: true;
+  lead: SheetLead;
+} | {
+  ok: false;
+  message: string;
+  lead?: SheetLead;
+};
 
 export type CompletionResult = {
   ok: true;
@@ -135,6 +150,42 @@ export async function appendLeadToSheet(leadId: string, lead: NormalizedLead) {
   }
 }
 
+export async function appendManualLeadToSheet(leadId: string, lead: NormalizedManualLead) {
+  const spreadsheetId = requireSpreadsheetId();
+  const sheetName = process.env.GOOGLE_SHEET_TAB || "Open Leads";
+  const token = await getGoogleAccessToken([SHEETS_SCOPE]);
+  const headers = await getSheetHeaders(spreadsheetId, sheetName, token);
+  const completeHeaders = await ensureSheetHeaders(
+    spreadsheetId,
+    sheetName,
+    token,
+    headers,
+  );
+  const row = mapManualLeadToColumns(leadId, lead, completeHeaders);
+
+  const response = await fetch(
+    `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${encodeURIComponent(
+      sheetName,
+    )}!A1:append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS`,
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ values: [row] }),
+    },
+  );
+
+  if (!response.ok) {
+    throw new Error(
+      `Google Sheets manual lead append failed with ${response.status}: ${await response.text()}`,
+    );
+  }
+
+  return sheetRowToLead(completeHeaders, row, 0);
+}
+
 export async function getPendingLeads() {
   return getRequestLeads();
 }
@@ -154,11 +205,85 @@ export async function getActiveJobs() {
     .filter((lead) => activeStatuses.has(lead.status));
 }
 
+export async function getManualLeads() {
+  const { headers, rows } = await getSheetRows();
+  return rows
+    .map((row, index) => sheetRowToLead(headers, row, index + 2))
+    .filter((lead) => lead.source === MANUAL_LEAD_SOURCE || lead.status === MANUAL_LEAD_STATUS);
+}
+
 export async function getLeadById(leadId: string) {
   const { headers, rows } = await getSheetRows();
   const index = rows.findIndex((row) => row[headers.indexOf("Unique ID")] === leadId);
   if (index < 0) return null;
   return sheetRowToLead(headers, rows[index], index + 2);
+}
+
+export async function convertManualLeadToActiveJob(
+  leadId: string,
+  approvedAmountValue = "",
+  convertedBy = "Owner",
+): Promise<ManualLeadDecisionResult> {
+  const lead = await getLeadById(leadId);
+  if (!lead) return { ok: false, message: "Lead not found." };
+  if (lead.status === APPROVED_STATUS && lead.operationalStatus === APPROVED_STATUS) {
+    return { ok: true, lead };
+  }
+  if (lead.status !== MANUAL_LEAD_STATUS) {
+    return { ok: false, message: `Lead is ${lead.status}.`, lead };
+  }
+  const approvedAmount = parseNonNegativeMoney(approvedAmountValue, "Approved amount");
+  if (!approvedAmount.ok) return { ok: false, message: approvedAmount.message, lead };
+
+  const timestamp = new Date().toISOString();
+  const updated = await updateLeadColumns(lead, {
+    Status: APPROVED_STATUS,
+    "Approved Amount": formatMoney(approvedAmount.value),
+    "Operational Status": APPROVED_STATUS,
+    "Approval / Decision Timestamp": timestamp,
+    "Audit Trail": appendAuditEntry(
+      lead.auditTrail,
+      `${convertedBy} converted manual lead to active job for ${formatMoney(approvedAmount.value)}. Linked job ID: ${lead.leadId}.`,
+      timestamp,
+    ),
+    "Internal Notes": appendInternalNote(
+      lead.internalNotes,
+      `Manual lead converted to active job. Linked job ID: ${lead.leadId}. Conversion timestamp: ${timestamp}.`,
+    ),
+  });
+  return { ok: true, lead: updated };
+}
+
+export async function declineManualLead(
+  leadId: string,
+  reason: string,
+  declinedBy = "Owner",
+): Promise<ManualLeadDecisionResult> {
+  const lead = await getLeadById(leadId);
+  if (!lead) return { ok: false, message: "Lead not found." };
+  if (lead.status === DECLINED_STATUS) return { ok: true, lead };
+  if (lead.status !== MANUAL_LEAD_STATUS) {
+    return { ok: false, message: `Lead is ${lead.status}.`, lead };
+  }
+
+  const timestamp = new Date().toISOString();
+  const declineReason = sanitizeDecisionReason(reason || "Not a fit");
+  const updated = await updateLeadColumns(lead, {
+    Status: DECLINED_STATUS,
+    "Operational Status": DECLINED_STATUS,
+    "Approval / Decision Timestamp": timestamp,
+    "Decline Reason": declineReason,
+    "Audit Trail": appendAuditEntry(
+      lead.auditTrail,
+      `${declinedBy} declined manual lead: ${declineReason}.`,
+      timestamp,
+    ),
+    "Internal Notes": appendInternalNote(
+      lead.internalNotes,
+      `Manual lead declined by ${declinedBy}: ${declineReason}`,
+    ),
+  });
+  return { ok: true, lead: updated };
 }
 
 export async function approveLead(

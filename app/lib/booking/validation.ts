@@ -2,9 +2,16 @@ import {
   APPOINTMENT_TYPES,
   LEAD_SOURCE,
   LEAD_STATUS,
+  MANUAL_LEAD_SOURCE,
+  MANUAL_LEAD_STATUS,
   SERVICE_OPTIONS,
 } from "./config";
-import type { BookingSubmission, NormalizedLead, PhotoReference } from "./types";
+import type {
+  BookingSubmission,
+  NormalizedLead,
+  NormalizedManualLead,
+  PhotoReference,
+} from "./types";
 
 export type ValidationResult<T> =
   | { ok: true; value: T }
@@ -135,6 +142,46 @@ export function validatePhotoFile(file: File): string | null {
   return null;
 }
 
+export function validateManualLeadInput(input: unknown): ValidationResult<NormalizedManualLead> {
+  const errors: Record<string, string> = {};
+  const data = input && typeof input === "object" ? input as Partial<NormalizedManualLead> : {};
+  const name = normalizeText(data.name ?? "");
+  const opportunityInfo = normalizeText(data.opportunityInfo ?? "");
+  const phone = normalizeText(data.phone ?? "");
+  const email = normalizeEmail(data.email ?? "");
+  const streetAddress = normalizeText(data.streetAddress ?? "");
+  const city = normalizeText(data.city ?? "");
+  const notes = normalizeText(data.notes ?? "");
+
+  if (!name) errors.name = "Name is required.";
+  if (name.length > 160) errors.name = "Keep the name under 160 characters.";
+  if (!opportunityInfo) errors.opportunityInfo = "Opportunity info is required.";
+  if (opportunityInfo.length > 1400) {
+    errors.opportunityInfo = "Keep opportunity info under 1,400 characters.";
+  }
+  if (phone && normalizePhone(phone).length < 7) errors.phone = "Enter a valid phone number.";
+  if (email && !EMAIL_PATTERN.test(email)) errors.email = "Enter a valid email address.";
+  if (streetAddress.length > 240) errors.streetAddress = "Keep the address under 240 characters.";
+  if (city.length > 120) errors.city = "Keep the city under 120 characters.";
+  if (notes.length > 800) errors.notes = "Keep notes under 800 characters.";
+
+  if (Object.keys(errors).length > 0) return { ok: false, errors };
+
+  return {
+    ok: true,
+    value: {
+      name,
+      opportunityInfo,
+      phone,
+      email,
+      normalizedEmail: email,
+      streetAddress,
+      city,
+      notes,
+    },
+  };
+}
+
 export function validatePhotoReference(photo: PhotoReference): string | null {
   if (!photo.id || !photo.url || !photo.name) return "Photo reference is incomplete.";
   if (!VALID_IMAGE_TYPES.has(photo.contentType)) return "Photo type is not allowed.";
@@ -193,6 +240,28 @@ export function mapLeadToColumns(
     "Requested Time": requestedTime,
     Source: LEAD_SOURCE,
     "Internal Notes": "Website request awaiting owner review.",
+  };
+
+  return headers.map((header) => escapeSheetCell(values[header] ?? ""));
+}
+
+export function mapManualLeadToColumns(
+  leadId: string,
+  lead: NormalizedManualLead,
+  headers: readonly string[],
+) {
+  const values: Record<string, string> = {
+    "Unique ID": leadId,
+    "Created At": new Date().toISOString(),
+    Status: MANUAL_LEAD_STATUS,
+    Name: lead.name,
+    Email: lead.normalizedEmail,
+    "Phone Number": lead.phone,
+    "Street Address": lead.streetAddress,
+    City: lead.city,
+    "Project Description": lead.opportunityInfo,
+    Source: MANUAL_LEAD_SOURCE,
+    "Internal Notes": lead.notes ? `Manual owner lead. ${lead.notes}` : "Manual owner lead.",
   };
 
   return headers.map((header) => escapeSheetCell(values[header] ?? ""));

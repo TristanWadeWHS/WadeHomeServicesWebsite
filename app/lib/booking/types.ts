@@ -44,6 +44,17 @@ export type NormalizedLead = BookingSubmission & {
   normalizedAddress: AddressInput;
 };
 
+export type NormalizedManualLead = {
+  name: string;
+  opportunityInfo: string;
+  phone: string;
+  email: string;
+  normalizedEmail: string;
+  streetAddress: string;
+  city: string;
+  notes: string;
+};
+
 export type AvailabilitySlot = {
   start: string;
   end: string;

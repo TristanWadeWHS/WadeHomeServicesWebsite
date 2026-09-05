@@ -1,6 +1,6 @@
 import { cookies } from "next/headers";
 import { SiteShell } from "../components/SiteShell";
-import { getActiveJobs, getRequestLeads } from "../lib/booking/google";
+import { getActiveJobs, getManualLeads, getRequestLeads } from "../lib/booking/google";
 import {
   isValidOwnerSession,
   operationsAuthConfigured,
@@ -18,6 +18,7 @@ export default async function LoginPage() {
   const user = await getOperationsUserFromCookies();
   const configured = operationsAuthConfigured();
   const requests = user?.role === ROLE_OWNER ? await getRequestLeads() : [];
+  const leads = user?.role === ROLE_OWNER ? await getManualLeads() : [];
   const activeJobs = user ? await getActiveJobs() : [];
 
   return (
@@ -39,7 +40,7 @@ export default async function LoginPage() {
         {configured && !user ? (
           <form className="owner-auth" action="/api/session/login" method="post">
             <label className="field">
-              <span>Access token</span>
+              <span>Password</span>
               <input autoComplete="current-password" name="token" type="password" />
             </label>
             <button className="button button--primary" type="submit">
@@ -51,6 +52,7 @@ export default async function LoginPage() {
         {user ? (
           <OperationsPortalClient
             activeJobs={activeJobs}
+            leads={leads}
             requests={requests}
             user={user}
           />
