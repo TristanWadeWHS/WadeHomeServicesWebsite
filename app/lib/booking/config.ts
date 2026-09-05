@@ -10,7 +10,9 @@ export const APPOINTMENT_TYPES = [
 ] as const;
 
 export const LEAD_STATUS = "Pending Approval";
+export const MANUAL_LEAD_STATUS = "Lead";
 export const LEAD_SOURCE = "Website";
+export const MANUAL_LEAD_SOURCE = "Owner Portal";
 
 export const WEBSITE_LEAD_COLUMNS = [
   "Unique ID",

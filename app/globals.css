@@ -101,6 +101,11 @@ a {
   justify-content: center;
 }
 
+.mobile-menu-toggle,
+.mobile-nav-panel {
+  display: none;
+}
+
 .site-nav a,
 .footer-links a {
   color: var(--charcoal);
@@ -170,6 +175,8 @@ a {
 
 .button:focus-visible,
 .site-nav a:focus-visible,
+.mobile-menu-toggle:focus-visible,
+.mobile-nav-panel a:focus-visible,
 .brand:focus-visible,
 .footer-links a:focus-visible,
 .service-card:focus-visible,
@@ -1317,6 +1324,24 @@ p {
   grid-template-columns: minmax(260px, 1fr) minmax(240px, 0.8fr) minmax(260px, 0.8fr);
 }
 
+.manual-lead-panel {
+  background: rgba(246, 245, 240, 0.92);
+  border: 1px solid rgba(31, 46, 39, 0.12);
+  border-radius: 10px;
+  display: grid;
+  gap: 14px;
+  padding: clamp(16px, 3vw, 24px);
+}
+
+.manual-lead-panel textarea {
+  min-height: 96px;
+  resize: vertical;
+}
+
+.manual-lead-card .owner-detail-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
 .operations-approval-control {
   display: grid;
   gap: 10px;
@@ -1397,18 +1422,124 @@ p {
 
 @media (max-width: 980px) {
   .site-header {
-    grid-template-columns: 1fr;
+    gap: 12px;
+    grid-template-columns: minmax(0, 1fr) auto;
     min-height: 0;
-  }
-
-  .brand,
-  .header-actions,
-  .site-nav {
-    justify-self: center;
+    padding: 10px clamp(14px, 4vw, 28px);
+    position: sticky;
   }
 
   .brand {
+    gap: 12px;
     min-width: 0;
+  }
+
+  .brand__mark {
+    height: clamp(64px, 12vw, 92px);
+    width: clamp(96px, 18vw, 138px);
+  }
+
+  .brand__name {
+    font-size: clamp(1.05rem, 3vw, 1.28rem);
+  }
+
+  .brand__tagline {
+    font-size: clamp(0.58rem, 1.8vw, 0.72rem);
+  }
+
+  .site-nav,
+  .header-actions {
+    display: none;
+  }
+
+  .mobile-menu-toggle {
+    align-items: center;
+    align-self: center;
+    background: white;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    cursor: pointer;
+    display: inline-flex;
+    flex-direction: column;
+    gap: 5px;
+    height: 46px;
+    justify-content: center;
+    justify-self: end;
+    padding: 0;
+    width: 46px;
+  }
+
+  .mobile-menu-toggle span {
+    background: var(--forest-deep);
+    border-radius: 999px;
+    display: block;
+    height: 2px;
+    transition:
+      opacity 200ms ease,
+      transform 200ms ease;
+    width: 20px;
+  }
+
+  .mobile-menu-toggle[aria-expanded="true"] span:first-child {
+    transform: translateY(7px) rotate(45deg);
+  }
+
+  .mobile-menu-toggle[aria-expanded="true"] span:nth-child(2) {
+    opacity: 0;
+  }
+
+  .mobile-menu-toggle[aria-expanded="true"] span:last-child {
+    transform: translateY(-7px) rotate(-45deg);
+  }
+
+  .mobile-nav-panel {
+    background: rgba(244, 245, 242, 0.98);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    box-shadow: 0 22px 60px rgba(8, 37, 29, 0.18);
+    display: grid;
+    gap: 16px;
+    grid-column: 1 / -1;
+    max-height: 0;
+    opacity: 0;
+    overflow: hidden;
+    padding: 0 14px;
+    pointer-events: none;
+    transform: translateY(-8px);
+    transition:
+      max-height 240ms ease,
+      opacity 200ms ease,
+      padding 240ms ease,
+      transform 240ms ease,
+      visibility 240ms ease;
+    visibility: hidden;
+  }
+
+  .mobile-nav-panel[data-open="true"] {
+    max-height: 520px;
+    opacity: 1;
+    padding: 14px;
+    pointer-events: auto;
+    transform: translateY(0);
+    visibility: visible;
+  }
+
+  .mobile-nav-panel nav,
+  .mobile-nav-actions {
+    display: grid;
+    gap: 8px;
+  }
+
+  .mobile-nav-panel nav a {
+    border-radius: 8px;
+    color: var(--charcoal);
+    font-size: 0.96rem;
+    font-weight: 850;
+    padding: 10px 8px;
+  }
+
+  .mobile-nav-actions {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .hero,
@@ -1447,6 +1578,10 @@ p {
     grid-template-columns: 1fr;
   }
 
+  .manual-lead-card .owner-detail-grid {
+    grid-template-columns: 1fr;
+  }
+
   .operations-actions,
   .operations-approval-control,
   .operations-closeout {
@@ -1470,8 +1605,8 @@ p {
   }
 
   .brand__mark {
-    height: 118px;
-    width: 177px;
+    height: 58px;
+    width: 87px;
   }
 
   .brand__name {
@@ -1479,7 +1614,7 @@ p {
   }
 
   .brand__tagline {
-    font-size: 0.68rem;
+    font-size: 0.56rem;
   }
 
   .team-banner {
@@ -1493,13 +1628,17 @@ p {
     width: 100%;
   }
 
-  .site-nav {
-    gap: 10px 14px;
-  }
-
-  .header-actions,
   .actions,
   .button {
+    width: 100%;
+  }
+
+  .mobile-menu-toggle,
+  .mobile-nav-actions .button {
+    width: 46px;
+  }
+
+  .mobile-nav-actions .button {
     width: 100%;
   }
 
@@ -1517,5 +1656,12 @@ p {
 
   .booking-actions {
     flex-direction: column;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mobile-menu-toggle span,
+  .mobile-nav-panel {
+    transition: none;
   }
 }

@@ -7,12 +7,18 @@ import {
   IN_PROGRESS_STATUS,
   LEAD_STATUS,
   LEGACY_APPROVED_STATUS,
+  MANUAL_LEAD_STATUS,
   REQUIRED_SHEET_COLUMNS,
 } from "./config";
 import type { BusyWindow } from "./scheduling";
 import { isSlotStillAvailable } from "./scheduling";
-import type { NormalizedLead, OwnerDecisionResult, SheetLead } from "./types";
-import { escapeSheetCell, mapLeadToColumns, parsePhotoReferences } from "./validation";
+import type { NormalizedLead, NormalizedManualLead, OwnerDecisionResult, SheetLead } from "./types";
+import {
+  escapeSheetCell,
+  mapLeadToColumns,
+  mapManualLeadToColumns,
+  parsePhotoReferences,
+} from "./validation";
 import { sendCustomerApprovalConfirmation } from "./ownerNotifications";
 
 export const HISTORICAL_SPREADSHEET_ID =
@@ -135,6 +141,42 @@ export async function appendLeadToSheet(leadId: string, lead: NormalizedLead) {
   }
 }
 
+export async function appendManualLeadToSheet(leadId: string, lead: NormalizedManualLead) {
+  const spreadsheetId = requireSpreadsheetId();
+  const sheetName = process.env.GOOGLE_SHEET_TAB || "Open Leads";
+  const token = await getGoogleAccessToken([SHEETS_SCOPE]);
+  const headers = await getSheetHeaders(spreadsheetId, sheetName, token);
+  const completeHeaders = await ensureSheetHeaders(
+    spreadsheetId,
+    sheetName,
+    token,
+    headers,
+  );
+  const row = mapManualLeadToColumns(leadId, lead, completeHeaders);
+
+  const response = await fetch(
+    `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${encodeURIComponent(
+      sheetName,
+    )}!A1:append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS`,
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ values: [row] }),
+    },
+  );
+
+  if (!response.ok) {
+    throw new Error(
+      `Google Sheets manual lead append failed with ${response.status}: ${await response.text()}`,
+    );
+  }
+
+  return sheetRowToLead(completeHeaders, row, 0);
+}
+
 export async function getPendingLeads() {
   return getRequestLeads();
 }
@@ -152,6 +194,13 @@ export async function getActiveJobs() {
   return rows
     .map((row, index) => sheetRowToLead(headers, row, index + 2))
     .filter((lead) => activeStatuses.has(lead.status));
+}
+
+export async function getManualLeads() {
+  const { headers, rows } = await getSheetRows();
+  return rows
+    .map((row, index) => sheetRowToLead(headers, row, index + 2))
+    .filter((lead) => lead.status === MANUAL_LEAD_STATUS);
 }
 
 export async function getLeadById(leadId: string) {

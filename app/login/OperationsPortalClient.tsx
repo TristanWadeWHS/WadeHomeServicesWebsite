@@ -9,12 +9,14 @@ import {
   DECLINED_STATUS,
   IN_PROGRESS_STATUS,
   LEAD_STATUS,
+  MANUAL_LEAD_STATUS,
 } from "../lib/booking/config";
 import { ROLE_OWNER, type OperationsUser } from "../lib/booking/ownerAuth";
 import type { OwnerDecisionResult, SheetLead } from "../lib/booking/types";
 
 type OperationsPortalClientProps = {
   activeJobs: SheetLead[];
+  leads: SheetLead[];
   requests: SheetLead[];
   user: OperationsUser;
 };
@@ -29,7 +31,7 @@ type BusyAction = {
   action: string;
 } | null;
 
-type PortalTab = "requests" | "active";
+type PortalTab = "requests" | "active" | "leads";
 
 type OperationsResult = {
   ok: boolean;
@@ -38,18 +40,42 @@ type OperationsResult = {
   details?: { lead?: SheetLead };
 };
 
+type ManualLeadForm = {
+  name: string;
+  opportunityInfo: string;
+  phone: string;
+  email: string;
+  streetAddress: string;
+  city: string;
+  notes: string;
+};
+
+const emptyManualLead: ManualLeadForm = {
+  name: "",
+  opportunityInfo: "",
+  phone: "",
+  email: "",
+  streetAddress: "",
+  city: "",
+  notes: "",
+};
+
 export function OperationsPortalClient({
   activeJobs,
+  leads,
   requests,
   user,
 }: OperationsPortalClientProps) {
   const [requestLeads, setRequestLeads] = useState(requests);
   const [jobLeads, setJobLeads] = useState(activeJobs);
+  const [manualLeads, setManualLeads] = useState(leads);
   const [notice, setNotice] = useState<Notice | null>(null);
   const [busyAction, setBusyAction] = useState<BusyAction>(null);
+  const [showLeadForm, setShowLeadForm] = useState(false);
+  const [manualLead, setManualLead] = useState<ManualLeadForm>(emptyManualLead);
   const isOwner = user.role === ROLE_OWNER;
   const [activeTab, setActiveTab] = useState<PortalTab>(isOwner ? "requests" : "active");
-  const availableTabs: PortalTab[] = isOwner ? ["requests", "active"] : ["active"];
+  const availableTabs: PortalTab[] = isOwner ? ["requests", "active", "leads"] : ["active"];
 
   function handleTabKeyDown(event: KeyboardEvent<HTMLButtonElement>) {
     if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
@@ -89,6 +115,46 @@ export function OperationsPortalClient({
       }
       return [updatedLead, ...current];
     });
+    setManualLeads((current) => {
+      const exists = current.some((lead) => lead.leadId === updatedLead.leadId);
+      if (updatedLead.status !== MANUAL_LEAD_STATUS) {
+        return current.filter((lead) => lead.leadId !== updatedLead.leadId);
+      }
+      if (exists) {
+        return current.map((lead) => (lead.leadId === updatedLead.leadId ? updatedLead : lead));
+      }
+      return [updatedLead, ...current];
+    });
+  }
+
+  async function createManualLead() {
+    setNotice(null);
+    setBusyAction({ leadId: "manual-lead", action: "create" });
+    try {
+      const response = await fetch("/api/owner/leads", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(manualLead),
+        credentials: "same-origin",
+      });
+      const payload = await readJson(response);
+      const createdLead = responseLead(payload);
+
+      if (!response.ok || !payload?.ok || !createdLead) {
+        setNotice({ tone: "error", message: friendlyError(payload) });
+        return;
+      }
+
+      upsertLead(createdLead);
+      setManualLead(emptyManualLead);
+      setShowLeadForm(false);
+      setActiveTab("leads");
+      setNotice({ tone: "success", message: "Lead created." });
+    } catch {
+      setNotice({ tone: "error", message: "Lead could not be created. Please try again." });
+    } finally {
+      setBusyAction(null);
+    }
   }
 
   async function decideLead(
@@ -217,6 +283,20 @@ export function OperationsPortalClient({
         >
           Active Jobs
         </button>
+        {isOwner ? (
+          <button
+            aria-controls="operations-panel-leads"
+            aria-selected={activeTab === "leads"}
+            className="operations-tab"
+            id="operations-tab-leads"
+            onKeyDown={handleTabKeyDown}
+            onClick={() => setActiveTab("leads")}
+            role="tab"
+            type="button"
+          >
+            Leads
+          </button>
+        ) : null}
       </div>
 
       {isOwner && activeTab === "requests" ? (
@@ -264,7 +344,162 @@ export function OperationsPortalClient({
         ))}
       </section>
       ) : null}
+
+      {isOwner && activeTab === "leads" ? (
+        <section className="operations-section" id="operations-panel-leads" role="tabpanel" aria-labelledby="operations-tab-leads">
+          <div className="operations-section__header">
+            <div>
+              <h3>Leads</h3>
+              <p>Track manually entered opportunities before they become booking requests.</p>
+            </div>
+            <button
+              className="button button--primary"
+              onClick={() => setShowLeadForm((current) => !current)}
+              type="button"
+            >
+              {showLeadForm ? "Close" : "+ Add Lead"}
+            </button>
+          </div>
+
+          {showLeadForm ? (
+            <ManualLeadPanel
+              busy={busyAction?.action === "create"}
+              lead={manualLead}
+              onChange={setManualLead}
+              onCreate={createManualLead}
+            />
+          ) : null}
+
+          {manualLeads.length === 0 ? (
+            <div className="owner-empty">
+              <h2>No manual leads.</h2>
+              <p>Owner-created opportunities with Lead status will appear here.</p>
+            </div>
+          ) : null}
+          {manualLeads.map((lead) => (
+            <ManualLeadCard key={lead.leadId} lead={lead} />
+          ))}
+        </section>
+      ) : null}
     </div>
+  );
+}
+
+function ManualLeadPanel({
+  busy,
+  lead,
+  onChange,
+  onCreate,
+}: {
+  busy: boolean;
+  lead: ManualLeadForm;
+  onChange: (lead: ManualLeadForm) => void;
+  onCreate: () => Promise<void>;
+}) {
+  function update<K extends keyof ManualLeadForm>(key: K, value: ManualLeadForm[K]) {
+    onChange({ ...lead, [key]: value });
+  }
+
+  return (
+    <section className="manual-lead-panel" aria-label="Add manual lead">
+      <div className="field-grid">
+        <label className="field">
+          <span>Name</span>
+          <input
+            disabled={busy}
+            maxLength={160}
+            onChange={(event) => update("name", event.target.value)}
+            required
+            type="text"
+            value={lead.name}
+          />
+        </label>
+        <label className="field">
+          <span>Phone</span>
+          <input
+            disabled={busy}
+            inputMode="tel"
+            onChange={(event) => update("phone", event.target.value)}
+            type="tel"
+            value={lead.phone}
+          />
+        </label>
+        <label className="field">
+          <span>Email</span>
+          <input
+            disabled={busy}
+            onChange={(event) => update("email", event.target.value)}
+            type="email"
+            value={lead.email}
+          />
+        </label>
+        <label className="field">
+          <span>Address</span>
+          <input
+            disabled={busy}
+            maxLength={240}
+            onChange={(event) => update("streetAddress", event.target.value)}
+            type="text"
+            value={lead.streetAddress}
+          />
+        </label>
+        <label className="field">
+          <span>City</span>
+          <input
+            disabled={busy}
+            maxLength={120}
+            onChange={(event) => update("city", event.target.value)}
+            type="text"
+            value={lead.city}
+          />
+        </label>
+      </div>
+      <label className="field">
+        <span>Opportunity Info</span>
+        <textarea
+          disabled={busy}
+          maxLength={1400}
+          onChange={(event) => update("opportunityInfo", event.target.value)}
+          required
+          value={lead.opportunityInfo}
+        />
+      </label>
+      <label className="field">
+        <span>Notes</span>
+        <textarea
+          disabled={busy}
+          maxLength={800}
+          onChange={(event) => update("notes", event.target.value)}
+          value={lead.notes}
+        />
+      </label>
+      <div className="owner-actions owner-actions--compact">
+        <button
+          className="button button--primary"
+          disabled={busy || !lead.name.trim() || !lead.opportunityInfo.trim()}
+          onClick={onCreate}
+          type="button"
+        >
+          {busy ? "Creating..." : "Create Lead"}
+        </button>
+      </div>
+    </section>
+  );
+}
+
+function ManualLeadCard({ lead }: { lead: SheetLead }) {
+  return (
+    <article className="owner-lead manual-lead-card">
+      <LeadHeader lead={lead} />
+      <dl className="owner-detail-grid">
+        <div><dt>Phone</dt><dd>{lead.phone || "Not provided"}</dd></div>
+        <div><dt>Email</dt><dd>{lead.email || "Not provided"}</dd></div>
+        <div><dt>Address / City</dt><dd>{[lead.streetAddress, lead.city].filter(Boolean).join(", ") || "Not provided"}</dd></div>
+        <div><dt>Opportunity Info</dt><dd>{lead.projectDescription}</dd></div>
+        <div><dt>Created</dt><dd>{lead.createdAt}</dd></div>
+        <div><dt>Status</dt><dd>{lead.status}</dd></div>
+      </dl>
+    </article>
   );
 }
 
