@@ -9,6 +9,7 @@ import {
   DECLINED_STATUS,
   IN_PROGRESS_STATUS,
   LEAD_STATUS,
+  MANUAL_LEAD_SOURCE,
   MANUAL_LEAD_STATUS,
 } from "../lib/booking/config";
 import { ROLE_OWNER, type OperationsUser } from "../lib/booking/ownerAuth";
@@ -32,6 +33,7 @@ type BusyAction = {
 } | null;
 
 type PortalTab = "requests" | "active" | "leads";
+type LeadAction = "convert" | "decline";
 
 type OperationsResult = {
   ok: boolean;
@@ -117,7 +119,7 @@ export function OperationsPortalClient({
     });
     setManualLeads((current) => {
       const exists = current.some((lead) => lead.leadId === updatedLead.leadId);
-      if (updatedLead.status !== MANUAL_LEAD_STATUS) {
+      if (updatedLead.source !== MANUAL_LEAD_SOURCE && updatedLead.status !== MANUAL_LEAD_STATUS) {
         return current.filter((lead) => lead.leadId !== updatedLead.leadId);
       }
       if (exists) {
@@ -152,6 +154,44 @@ export function OperationsPortalClient({
       setNotice({ tone: "success", message: "Lead created." });
     } catch {
       setNotice({ tone: "error", message: "Lead could not be created. Please try again." });
+    } finally {
+      setBusyAction(null);
+    }
+  }
+
+  async function updateManualLead(
+    leadId: string,
+    action: LeadAction,
+    values: Record<string, string>,
+  ) {
+    setNotice(null);
+    setBusyAction({ leadId, action });
+    const form = new FormData();
+    form.set("leadId", leadId);
+    for (const [key, value] of Object.entries(values)) form.set(key, value);
+
+    try {
+      const response = await fetch(`/api/owner/leads/${action}`, {
+        method: "POST",
+        body: form,
+        credentials: "same-origin",
+      });
+      const payload = await readJson(response);
+      const updatedLead = responseLead(payload);
+      if (updatedLead) upsertLead(updatedLead);
+
+      if (!response.ok || !payload?.ok) {
+        setNotice({ tone: "error", message: friendlyError(payload) });
+        return;
+      }
+
+      setNotice({
+        tone: "success",
+        message: action === "convert" ? "Lead converted to active job." : "Lead declined.",
+      });
+      if (action === "convert") setActiveTab("active");
+    } catch {
+      setNotice({ tone: "error", message: "This lead could not be updated. Please try again." });
     } finally {
       setBusyAction(null);
     }
@@ -377,7 +417,12 @@ export function OperationsPortalClient({
             </div>
           ) : null}
           {manualLeads.map((lead) => (
-            <ManualLeadCard key={lead.leadId} lead={lead} />
+            <ManualLeadCard
+              busyAction={busyAction}
+              key={lead.leadId}
+              lead={lead}
+              onUpdate={updateManualLead}
+            />
           ))}
         </section>
       ) : null}
@@ -487,7 +532,21 @@ function ManualLeadPanel({
   );
 }
 
-function ManualLeadCard({ lead }: { lead: SheetLead }) {
+function ManualLeadCard({
+  busyAction,
+  lead,
+  onUpdate,
+}: {
+  busyAction: BusyAction;
+  lead: SheetLead;
+  onUpdate: (leadId: string, action: LeadAction, values: Record<string, string>) => Promise<void>;
+}) {
+  const [declineReason, setDeclineReason] = useState("");
+  const isBusy = busyAction !== null;
+  const isConvertBusy = busyAction?.leadId === lead.leadId && busyAction.action === "convert";
+  const isDeclineBusy = busyAction?.leadId === lead.leadId && busyAction.action === "decline";
+  const canTransition = lead.status === MANUAL_LEAD_STATUS;
+
   return (
     <article className="owner-lead manual-lead-card">
       <LeadHeader lead={lead} />
@@ -498,9 +557,51 @@ function ManualLeadCard({ lead }: { lead: SheetLead }) {
         <div><dt>Opportunity Info</dt><dd>{lead.projectDescription}</dd></div>
         <div><dt>Created</dt><dd>{lead.createdAt}</dd></div>
         <div><dt>Status</dt><dd>{lead.status}</dd></div>
+        <div><dt>Linked Job</dt><dd>{linkedJobLabel(lead)}</dd></div>
+        <div><dt>Decision</dt><dd>{lead.decisionTimestamp || "Not recorded"}</dd></div>
+        <div><dt>Decline Reason</dt><dd>{lead.declineReason || "None"}</dd></div>
       </dl>
+      {canTransition ? (
+        <div className="owner-actions operations-actions manual-lead-actions">
+          <button
+            className="button button--primary"
+            disabled={isBusy}
+            onClick={() => onUpdate(lead.leadId, "convert", {})}
+            type="button"
+          >
+            {isConvertBusy ? "Converting..." : "Convert to Active Job"}
+          </button>
+          <div className="owner-decline-control">
+            <label className="field">
+              <span>Decline reason</span>
+              <input
+                disabled={isBusy}
+                maxLength={220}
+                onChange={(event) => setDeclineReason(event.target.value)}
+                placeholder="Optional"
+                type="text"
+                value={declineReason}
+              />
+            </label>
+            <button
+              className="button button--dark"
+              disabled={isBusy}
+              onClick={() => onUpdate(lead.leadId, "decline", { reason: declineReason })}
+              type="button"
+            >
+              {isDeclineBusy ? "Declining..." : "Decline Lead"}
+            </button>
+          </div>
+        </div>
+      ) : null}
     </article>
   );
+}
+
+function linkedJobLabel(lead: SheetLead) {
+  return [APPROVED_STATUS, IN_PROGRESS_STATUS, COMPLETED_STATUS].includes(lead.status)
+    ? lead.leadId
+    : "Not linked";
 }
 
 function RequestCard({

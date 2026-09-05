@@ -1342,6 +1342,10 @@ p {
   grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
+.manual-lead-actions {
+  grid-template-columns: minmax(220px, 0.7fr) minmax(260px, 1fr);
+}
+
 .operations-approval-control {
   display: grid;
   gap: 10px;

@@ -323,6 +323,44 @@ test("manual owner leads use canonical sheet columns and owner-only API", () => 
   assert.equal(row[REQUIRED_SHEET_COLUMNS.indexOf("Internal Notes")], "Manual owner lead. -Call next week");
 });
 
+test("manual lead conversion and decline are owner-only persisted transitions", () => {
+  const clientSource = readFileSync("app/login/OperationsPortalClient.tsx", "utf8");
+  const convertRoute = readFileSync("app/api/owner/leads/convert/route.ts", "utf8");
+  const declineRoute = readFileSync("app/api/owner/leads/decline/route.ts", "utf8");
+  const googleSource = readFileSync("app/lib/booking/google.ts", "utf8");
+
+  assert.equal(clientSource.includes("Convert to Active Job"), true);
+  assert.equal(clientSource.includes("Decline Lead"), true);
+  assert.equal(clientSource.includes("Lead converted to active job."), true);
+  assert.equal(clientSource.includes("Lead declined."), true);
+  assert.equal(clientSource.includes("Linked Job"), true);
+  assert.equal(clientSource.includes("Decision"), true);
+  assert.equal(clientSource.includes("Decline Reason"), true);
+  assert.equal(clientSource.includes("setManualLeads"), true);
+  assert.equal(clientSource.includes("setJobLeads"), true);
+
+  assert.equal(convertRoute.includes("requireRole(request, ROLE_OWNER)"), true);
+  assert.equal(declineRoute.includes("requireRole(request, ROLE_OWNER)"), true);
+  assert.equal(convertRoute.includes("isSameOriginRequest"), true);
+  assert.equal(declineRoute.includes("isSameOriginRequest"), true);
+  assert.equal(convertRoute.includes("convertManualLeadToActiveJob"), true);
+  assert.equal(declineRoute.includes("declineManualLead"), true);
+  assert.equal(convertRoute.includes("jsonError(\"Lead could not be converted safely.\""), true);
+  assert.equal(declineRoute.includes("jsonError(\"Lead could not be declined safely.\""), true);
+
+  assert.equal(googleSource.includes("export async function convertManualLeadToActiveJob"), true);
+  assert.equal(googleSource.includes("export async function declineManualLead"), true);
+  assert.equal(googleSource.includes("lead.status === APPROVED_STATUS && lead.operationalStatus === APPROVED_STATUS"), true);
+  assert.equal(googleSource.includes("lead.status === DECLINED_STATUS"), true);
+  assert.equal(googleSource.includes("lead.status !== MANUAL_LEAD_STATUS"), true);
+  assert.equal(googleSource.includes("Linked job ID: ${lead.leadId}"), true);
+  assert.equal(googleSource.includes("Conversion timestamp: ${timestamp}"), true);
+  assert.equal(googleSource.includes('"Operational Status": APPROVED_STATUS'), true);
+  assert.equal(googleSource.includes('"Operational Status": DECLINED_STATUS'), true);
+  assert.equal(googleSource.includes('"Decline Reason": declineReason'), true);
+  assert.equal(googleSource.includes("sendOwnerNewLeadNotification"), false);
+});
+
 test("operations Sheet schema includes owner and close metadata without duplicate owner columns", () => {
   assert.equal(REQUIRED_SHEET_COLUMNS.includes("Owner"), true);
   assert.equal(REQUIRED_SHEET_COLUMNS.filter((column) => column === "Owner").length, 1);

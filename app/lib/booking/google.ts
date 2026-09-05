@@ -7,6 +7,7 @@ import {
   IN_PROGRESS_STATUS,
   LEAD_STATUS,
   LEGACY_APPROVED_STATUS,
+  MANUAL_LEAD_SOURCE,
   MANUAL_LEAD_STATUS,
   REQUIRED_SHEET_COLUMNS,
 } from "./config";
@@ -39,6 +40,14 @@ export type CloseRequestInput = {
 };
 
 export type JobStatusInput = typeof APPROVED_STATUS | typeof IN_PROGRESS_STATUS;
+export type ManualLeadDecisionResult = {
+  ok: true;
+  lead: SheetLead;
+} | {
+  ok: false;
+  message: string;
+  lead?: SheetLead;
+};
 
 export type CompletionResult = {
   ok: true;
@@ -200,7 +209,7 @@ export async function getManualLeads() {
   const { headers, rows } = await getSheetRows();
   return rows
     .map((row, index) => sheetRowToLead(headers, row, index + 2))
-    .filter((lead) => lead.status === MANUAL_LEAD_STATUS);
+    .filter((lead) => lead.source === MANUAL_LEAD_SOURCE || lead.status === MANUAL_LEAD_STATUS);
 }
 
 export async function getLeadById(leadId: string) {
@@ -208,6 +217,69 @@ export async function getLeadById(leadId: string) {
   const index = rows.findIndex((row) => row[headers.indexOf("Unique ID")] === leadId);
   if (index < 0) return null;
   return sheetRowToLead(headers, rows[index], index + 2);
+}
+
+export async function convertManualLeadToActiveJob(
+  leadId: string,
+  convertedBy = "Owner",
+): Promise<ManualLeadDecisionResult> {
+  const lead = await getLeadById(leadId);
+  if (!lead) return { ok: false, message: "Lead not found." };
+  if (lead.status === APPROVED_STATUS && lead.operationalStatus === APPROVED_STATUS) {
+    return { ok: true, lead };
+  }
+  if (lead.status !== MANUAL_LEAD_STATUS) {
+    return { ok: false, message: `Lead is ${lead.status}.`, lead };
+  }
+
+  const timestamp = new Date().toISOString();
+  const updated = await updateLeadColumns(lead, {
+    Status: APPROVED_STATUS,
+    "Operational Status": APPROVED_STATUS,
+    "Approval / Decision Timestamp": timestamp,
+    "Audit Trail": appendAuditEntry(
+      lead.auditTrail,
+      `${convertedBy} converted manual lead to active job. Linked job ID: ${lead.leadId}.`,
+      timestamp,
+    ),
+    "Internal Notes": appendInternalNote(
+      lead.internalNotes,
+      `Manual lead converted to active job. Linked job ID: ${lead.leadId}. Conversion timestamp: ${timestamp}.`,
+    ),
+  });
+  return { ok: true, lead: updated };
+}
+
+export async function declineManualLead(
+  leadId: string,
+  reason: string,
+  declinedBy = "Owner",
+): Promise<ManualLeadDecisionResult> {
+  const lead = await getLeadById(leadId);
+  if (!lead) return { ok: false, message: "Lead not found." };
+  if (lead.status === DECLINED_STATUS) return { ok: true, lead };
+  if (lead.status !== MANUAL_LEAD_STATUS) {
+    return { ok: false, message: `Lead is ${lead.status}.`, lead };
+  }
+
+  const timestamp = new Date().toISOString();
+  const declineReason = sanitizeDecisionReason(reason || "Not a fit");
+  const updated = await updateLeadColumns(lead, {
+    Status: DECLINED_STATUS,
+    "Operational Status": DECLINED_STATUS,
+    "Approval / Decision Timestamp": timestamp,
+    "Decline Reason": declineReason,
+    "Audit Trail": appendAuditEntry(
+      lead.auditTrail,
+      `${declinedBy} declined manual lead: ${declineReason}.`,
+      timestamp,
+    ),
+    "Internal Notes": appendInternalNote(
+      lead.internalNotes,
+      `Manual lead declined by ${declinedBy}: ${declineReason}`,
+    ),
+  });
+  return { ok: true, lead: updated };
 }
 
 export async function approveLead(
