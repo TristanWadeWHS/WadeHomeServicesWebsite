@@ -17,10 +17,15 @@ export async function POST(request: Request) {
 
   const form = await request.formData();
   const leadId = String(form.get("leadId") ?? "");
+  const approvedAmount = String(form.get("approvedAmount") ?? "");
   if (!leadId) return jsonError("Lead ID is required.", 400);
 
   try {
-    const result = await convertManualLeadToActiveJob(leadId, authorization.user.label);
+    const result = await convertManualLeadToActiveJob(
+      leadId,
+      approvedAmount,
+      authorization.user.label,
+    );
     if (!result.ok) return jsonError(result.message, 409, { lead: result.lead });
     return Response.json(result);
   } catch (error) {

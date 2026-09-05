@@ -221,6 +221,7 @@ export async function getLeadById(leadId: string) {
 
 export async function convertManualLeadToActiveJob(
   leadId: string,
+  approvedAmountValue = "",
   convertedBy = "Owner",
 ): Promise<ManualLeadDecisionResult> {
   const lead = await getLeadById(leadId);
@@ -231,15 +232,18 @@ export async function convertManualLeadToActiveJob(
   if (lead.status !== MANUAL_LEAD_STATUS) {
     return { ok: false, message: `Lead is ${lead.status}.`, lead };
   }
+  const approvedAmount = parseNonNegativeMoney(approvedAmountValue, "Approved amount");
+  if (!approvedAmount.ok) return { ok: false, message: approvedAmount.message, lead };
 
   const timestamp = new Date().toISOString();
   const updated = await updateLeadColumns(lead, {
     Status: APPROVED_STATUS,
+    "Approved Amount": formatMoney(approvedAmount.value),
     "Operational Status": APPROVED_STATUS,
     "Approval / Decision Timestamp": timestamp,
     "Audit Trail": appendAuditEntry(
       lead.auditTrail,
-      `${convertedBy} converted manual lead to active job. Linked job ID: ${lead.leadId}.`,
+      `${convertedBy} converted manual lead to active job for ${formatMoney(approvedAmount.value)}. Linked job ID: ${lead.leadId}.`,
       timestamp,
     ),
     "Internal Notes": appendInternalNote(

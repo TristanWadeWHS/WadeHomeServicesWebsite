@@ -330,6 +330,7 @@ test("manual lead conversion and decline are owner-only persisted transitions", 
   const googleSource = readFileSync("app/lib/booking/google.ts", "utf8");
 
   assert.equal(clientSource.includes("Convert to Active Job"), true);
+  assert.equal(clientSource.includes('onUpdate(lead.leadId, "convert", { approvedAmount })'), true);
   assert.equal(clientSource.includes("Decline Lead"), true);
   assert.equal(clientSource.includes("Lead converted to active job."), true);
   assert.equal(clientSource.includes("Lead declined."), true);
@@ -344,11 +345,14 @@ test("manual lead conversion and decline are owner-only persisted transitions", 
   assert.equal(convertRoute.includes("isSameOriginRequest"), true);
   assert.equal(declineRoute.includes("isSameOriginRequest"), true);
   assert.equal(convertRoute.includes("convertManualLeadToActiveJob"), true);
+  assert.equal(convertRoute.includes('form.get("approvedAmount")'), true);
   assert.equal(declineRoute.includes("declineManualLead"), true);
   assert.equal(convertRoute.includes("jsonError(\"Lead could not be converted safely.\""), true);
   assert.equal(declineRoute.includes("jsonError(\"Lead could not be declined safely.\""), true);
 
   assert.equal(googleSource.includes("export async function convertManualLeadToActiveJob"), true);
+  assert.equal(googleSource.includes('parseNonNegativeMoney(approvedAmountValue, "Approved amount")'), true);
+  assert.equal(googleSource.includes('"Approved Amount": formatMoney(approvedAmount.value)'), true);
   assert.equal(googleSource.includes("export async function declineManualLead"), true);
   assert.equal(googleSource.includes("lead.status === APPROVED_STATUS && lead.operationalStatus === APPROVED_STATUS"), true);
   assert.equal(googleSource.includes("lead.status === DECLINED_STATUS"), true);

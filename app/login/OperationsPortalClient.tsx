@@ -541,6 +541,7 @@ function ManualLeadCard({
   lead: SheetLead;
   onUpdate: (leadId: string, action: LeadAction, values: Record<string, string>) => Promise<void>;
 }) {
+  const [approvedAmount, setApprovedAmount] = useState(lead.approvedAmount || "");
   const [declineReason, setDeclineReason] = useState("");
   const isBusy = busyAction !== null;
   const isConvertBusy = busyAction?.leadId === lead.leadId && busyAction.action === "convert";
@@ -555,6 +556,7 @@ function ManualLeadCard({
         <div><dt>Email</dt><dd>{lead.email || "Not provided"}</dd></div>
         <div><dt>Address / City</dt><dd>{[lead.streetAddress, lead.city].filter(Boolean).join(", ") || "Not provided"}</dd></div>
         <div><dt>Opportunity Info</dt><dd>{lead.projectDescription}</dd></div>
+        <div><dt>Approved Amount</dt><dd>{lead.approvedAmount || "Not recorded"}</dd></div>
         <div><dt>Created</dt><dd>{lead.createdAt}</dd></div>
         <div><dt>Status</dt><dd>{lead.status}</dd></div>
         <div><dt>Linked Job</dt><dd>{linkedJobLabel(lead)}</dd></div>
@@ -563,14 +565,29 @@ function ManualLeadCard({
       </dl>
       {canTransition ? (
         <div className="owner-actions operations-actions manual-lead-actions">
-          <button
-            className="button button--primary"
-            disabled={isBusy}
-            onClick={() => onUpdate(lead.leadId, "convert", {})}
-            type="button"
-          >
-            {isConvertBusy ? "Converting..." : "Convert to Active Job"}
-          </button>
+          <div className="operations-approval-control">
+            <label className="field operations-amount">
+              <span>Approved Amount</span>
+              <input
+                disabled={isBusy}
+                inputMode="decimal"
+                min="0"
+                onChange={(event) => setApprovedAmount(event.target.value)}
+                placeholder="0.00"
+                step="0.01"
+                type="number"
+                value={approvedAmount}
+              />
+            </label>
+            <button
+              className="button button--primary"
+              disabled={isBusy || !approvedAmount.trim()}
+              onClick={() => onUpdate(lead.leadId, "convert", { approvedAmount })}
+              type="button"
+            >
+              {isConvertBusy ? "Converting..." : "Convert to Active Job"}
+            </button>
+          </div>
           <div className="owner-decline-control">
             <label className="field">
               <span>Decline reason</span>
