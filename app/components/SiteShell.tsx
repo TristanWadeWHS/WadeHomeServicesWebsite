@@ -35,7 +35,11 @@ export function SiteShell({ children }: { children: ReactNode }) {
 
   return (
     <>
-      <header className="site-header" ref={headerRef}>
+      <header
+        className="site-header"
+        data-mobile-nav-open={mobileNavOpen}
+        ref={headerRef}
+      >
         <Link className="brand" href="/" aria-label="Wade Home Services home" onClick={closeMobileNav}>
           <span className="brand__mark">
             <Image
@@ -79,6 +83,7 @@ export function SiteShell({ children }: { children: ReactNode }) {
           </Link>
         </div>
         <div
+          aria-hidden={!mobileNavOpen}
           className="mobile-nav-panel"
           data-open={mobileNavOpen}
           id="mobile-navigation"
