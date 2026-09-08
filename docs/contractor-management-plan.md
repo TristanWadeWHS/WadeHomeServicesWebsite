@@ -122,5 +122,5 @@ Acceptance criteria:
 
 - Provision a Postgres-compatible database for contractor operations.
 - Set `CONTRACTOR_DATABASE_URL` in Preview and Production before contractor accounts are usable.
-- Run the contractor schema creation path once through the app, or apply the equivalent SQL from `app/lib/contractors/database.ts`.
+- Apply `db/migrations/001_contractor_portal_foundation.sql` to the contractor database, or let the app run its matching idempotent schema creation path on first authenticated owner/contractor use.
 - No `ACCOUNT_MANAGER` role is planned yet.

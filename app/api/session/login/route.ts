@@ -30,8 +30,9 @@ export async function POST(request: Request) {
   const form = await request.formData();
   const token = String(form.get("token") ?? "");
   const email = String(form.get("email") ?? "");
-  const contractor = await authenticateContractorAccount(email, token);
-  const user = roleForToken(token) ?? (contractor ? {
+  const roleUser = roleForToken(token);
+  const contractor = roleUser || !email ? null : await authenticateContractorAccount(email, token);
+  const user = roleUser ?? (contractor ? {
     role: ROLE_CONTRACTOR,
     label: contractor.displayName,
     id: contractor.id,
