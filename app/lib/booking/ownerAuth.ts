@@ -1,4 +1,5 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
+import { getActiveContractorAccount } from "../contractors/database";
 
 export const OWNER_SESSION_COOKIE = "whs_owner_session";
 export const OWNER_SESSION_ACTIVE_COOKIE = "whs_owner_session_active";
@@ -7,14 +8,18 @@ export const OPERATIONS_SESSION_ACTIVE_COOKIE = "whs_operations_session_active";
 
 export const ROLE_OWNER = "OWNER";
 export const ROLE_FIELD_MANAGER = "FIELD_MANAGER";
-export type OperationsRole = typeof ROLE_OWNER | typeof ROLE_FIELD_MANAGER;
+export const ROLE_CONTRACTOR = "CONTRACTOR";
+export type OperationsRole = typeof ROLE_OWNER | typeof ROLE_FIELD_MANAGER | typeof ROLE_CONTRACTOR;
 export type OperationsUser = {
   role: OperationsRole;
   label: string;
+  id?: string;
+  email?: string;
 };
 
 const OWNER_SESSION_VERSION = "v1";
 const OPERATIONS_SESSION_VERSION = "v2";
+const OPERATIONS_IDENTITY_SESSION_VERSION = "v3";
 const OWNER_SESSION_MAX_AGE_SECONDS = 8 * 60 * 60;
 const revokedSessions = new Map<string, number>();
 
@@ -35,7 +40,7 @@ export function getAuthorizedOperationsUser(request: Request): OperationsUser | 
   const active = extractCookie(request, OPERATIONS_SESSION_ACTIVE_COOKIE) === "1";
   if (active) {
     const user = verifyOperationsSession(session);
-    if (user) return user;
+    if (user && user.role !== ROLE_CONTRACTOR) return user;
   }
 
   const ownerSession = extractOwnerSession(request);
@@ -44,6 +49,17 @@ export function getAuthorizedOperationsUser(request: Request): OperationsUser | 
   }
 
   return null;
+}
+
+export async function getAuthorizedOperationsUserAsync(request: Request): Promise<OperationsUser | null> {
+  const session = extractCookie(request, OPERATIONS_SESSION_COOKIE);
+  const active = extractCookie(request, OPERATIONS_SESSION_ACTIVE_COOKIE) === "1";
+  if (active) {
+    const user = await verifyOperationsSessionAsync(session);
+    if (user) return user;
+  }
+
+  return getAuthorizedOperationsUser(request);
 }
 
 export function requireRole(request: Request, role: OperationsRole) {
@@ -55,6 +71,15 @@ export function requireRole(request: Request, role: OperationsRole) {
 
 export function requireAnyRole(request: Request, roles: OperationsRole[]) {
   const user = getAuthorizedOperationsUser(request);
+  if (!user) return { ok: false as const, status: 401, message: "Unauthorized." };
+  if (!roles.includes(user.role)) {
+    return { ok: false as const, status: 403, message: "Forbidden." };
+  }
+  return { ok: true as const, user };
+}
+
+export async function requireAnyRoleAsync(request: Request, roles: OperationsRole[]) {
+  const user = await getAuthorizedOperationsUserAsync(request);
   if (!user) return { ok: false as const, status: 401, message: "Unauthorized." };
   if (!roles.includes(user.role)) {
     return { ok: false as const, status: 403, message: "Forbidden." };
@@ -100,6 +125,10 @@ export function createOwnerSession(now = Date.now()) {
 export function createOperationsSession(user: OperationsUser, now = Date.now()) {
   const signingSecret = operationsSigningSecret();
   const issuedAt = String(now);
+  if (user.id) {
+    const payload = `${OPERATIONS_IDENTITY_SESSION_VERSION}.${user.role}.${encodeURIComponent(user.id)}.${issuedAt}`;
+    return `${payload}.${signOperationsSession(payload, signingSecret)}`;
+  }
   const payload = `${OPERATIONS_SESSION_VERSION}.${user.role}.${issuedAt}`;
   return `${payload}.${signOperationsSession(payload, signingSecret)}`;
 }
@@ -124,6 +153,17 @@ export function verifyOperationsSession(session: string | null | undefined, now 
   if (!signingSecret) return null;
 
   const parts = session.split(".");
+  if (parts.length === 5 && parts[0] === OPERATIONS_IDENTITY_SESSION_VERSION) {
+    const role = parts[1] as OperationsRole;
+    if (role !== ROLE_CONTRACTOR) return null;
+    const issuedAt = Number(parts[3]);
+    if (!validIssuedAt(issuedAt, now)) return null;
+    if (isRevoked(session, now)) return null;
+    const payload = `${parts[0]}.${parts[1]}.${parts[2]}.${parts[3]}`;
+    if (!signaturesMatch(signOperationsSession(payload, signingSecret), parts[4])) return null;
+    return { role, label: "Contractor", id: decodeURIComponent(parts[2]) };
+  }
+
   if (parts.length !== 4 || parts[0] !== OPERATIONS_SESSION_VERSION) return null;
   const role = parts[1] as OperationsRole;
   if (role !== ROLE_OWNER && role !== ROLE_FIELD_MANAGER) return null;
@@ -134,6 +174,25 @@ export function verifyOperationsSession(session: string | null | undefined, now 
   const payload = `${parts[0]}.${parts[1]}.${parts[2]}`;
   if (!signaturesMatch(signOperationsSession(payload, signingSecret), parts[3])) return null;
   return { role, label: role === ROLE_OWNER ? "Owner" : "Field Manager" };
+}
+
+export async function verifyOperationsSessionAsync(
+  session: string | null | undefined,
+  now = Date.now(),
+): Promise<OperationsUser | null> {
+  const user = verifyOperationsSession(session, now);
+  if (!user) return null;
+  if (user.role !== ROLE_CONTRACTOR) return user;
+  if (!user.id) return null;
+
+  const contractor = await getActiveContractorAccount(user.id);
+  if (!contractor) return null;
+  return {
+    role: ROLE_CONTRACTOR,
+    label: contractor.displayName,
+    id: contractor.id,
+    email: contractor.email,
+  };
 }
 
 export function ownerSessionCookieOptions() {
@@ -237,6 +296,7 @@ function validIssuedAt(issuedAt: number, now: number) {
 }
 
 function tokenForRole(role: OperationsRole) {
+  if (role === ROLE_CONTRACTOR) return null;
   return role === ROLE_OWNER
     ? process.env.OWNER_APPROVAL_TOKEN
     : process.env.FIELD_MANAGER_ACCESS_TOKEN;

@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 import {
   CLOSED_STATUS,
+  CONTRACTOR_LEAD_SOURCE,
   LEAD_SOURCE,
   LEAD_STATUS,
   MANUAL_LEAD_SOURCE,
@@ -42,6 +43,7 @@ import {
   OPERATIONS_SESSION_ACTIVE_COOKIE,
   OPERATIONS_SESSION_COOKIE,
   requireRole,
+  ROLE_CONTRACTOR,
   ROLE_FIELD_MANAGER,
   ROLE_OWNER,
   isValidOwnerSession,
@@ -54,6 +56,14 @@ import {
   verifyOperationsSession,
 } from "../app/lib/booking/ownerAuth.ts";
 import {
+  contractorDatabaseConfigured,
+} from "../app/lib/contractors/database.ts";
+import {
+  hashContractorPassword,
+  passwordMeetsContractorPolicy,
+  verifyContractorPassword,
+} from "../app/lib/contractors/passwords.ts";
+import {
   createLeadId,
   escapeSheetCell,
   formatPhotoReferences,
@@ -61,6 +71,7 @@ import {
   MAX_PHOTO_COUNT,
   MAX_PHOTO_SIZE_BYTES,
   mapLeadToColumns,
+  mapContractorLeadToColumns,
   mapManualLeadToColumns,
   parsePhotoReferences,
   validateManualLeadInput,
@@ -259,7 +270,7 @@ test("operations portal uses owner-only workflow tabs", () => {
   assert.equal(clientSource.includes("Active Jobs"), true);
   assert.equal(clientSource.includes("Leads"), true);
   assert.equal(clientSource.includes("+ Add Lead"), true);
-  assert.equal(clientSource.includes('useState<PortalTab>(isOwner ? "requests" : "active")'), true);
+  assert.equal(clientSource.includes('useState<OwnerPortalTab>(isOwner ? "requests" : "active")'), true);
   assert.equal(clientSource.includes('activeTab === "requests"'), true);
   assert.equal(clientSource.includes('activeTab === "active"'), true);
   assert.equal(clientSource.includes('activeTab === "leads"'), true);
@@ -270,9 +281,63 @@ test("operations login uses password wording without changing submit action", ()
   const source = readFileSync("app/login/page.tsx", "utf8");
 
   assert.equal(source.includes("<span>Password</span>"), true);
+  assert.equal(source.includes('name="email"'), true);
   assert.equal(source.includes("Access token"), false);
   assert.equal(source.includes("Open Operations Portal"), true);
   assert.equal(source.includes('action="/api/session/login"'), true);
+});
+
+test("contractor sessions carry individual identity without changing owner and field tokens", () => {
+  const previous = {
+    owner: process.env.OWNER_APPROVAL_TOKEN,
+    field: process.env.FIELD_MANAGER_ACCESS_TOKEN,
+  };
+  process.env.OWNER_APPROVAL_TOKEN = "owner-secret";
+  process.env.FIELD_MANAGER_ACCESS_TOKEN = "field-secret";
+
+  const contractorSession = createOperationsSession({
+    role: ROLE_CONTRACTOR,
+    label: "Alejandro",
+    id: "ctr_123",
+    email: "alejandro@example.com",
+  });
+  const contractorUser = verifyOperationsSession(contractorSession);
+  assert.equal(contractorUser?.role, ROLE_CONTRACTOR);
+  assert.equal(contractorUser?.id, "ctr_123");
+
+  assert.deepEqual(roleForToken("owner-secret"), { role: ROLE_OWNER, label: "Owner" });
+  assert.deepEqual(roleForToken("field-secret"), {
+    role: ROLE_FIELD_MANAGER,
+    label: "Field Manager",
+  });
+  assert.equal(roleForToken("contractor-secret"), null);
+
+  restoreOperationsEnv(previous);
+});
+
+test("contractor passwords are salted hashes and database auth is explicit", () => {
+  const previous = {
+    contractorDatabaseUrl: process.env.CONTRACTOR_DATABASE_URL,
+    postgresUrl: process.env.POSTGRES_URL,
+  };
+  delete process.env.CONTRACTOR_DATABASE_URL;
+  delete process.env.POSTGRES_URL;
+  assert.equal(contractorDatabaseConfigured(), false);
+
+  process.env.CONTRACTOR_DATABASE_URL = "postgres://example";
+  assert.equal(contractorDatabaseConfigured(), true);
+
+  const hash = hashContractorPassword("safe temporary password", "fixed-salt");
+  assert.equal(hash.includes("safe temporary password"), false);
+  assert.equal(verifyContractorPassword("safe temporary password", hash), true);
+  assert.equal(verifyContractorPassword("wrong password", hash), false);
+  assert.equal(passwordMeetsContractorPolicy("short"), false);
+  assert.equal(passwordMeetsContractorPolicy("long enough password"), true);
+
+  if (previous.contractorDatabaseUrl === undefined) delete process.env.CONTRACTOR_DATABASE_URL;
+  else process.env.CONTRACTOR_DATABASE_URL = previous.contractorDatabaseUrl;
+  if (previous.postgresUrl === undefined) delete process.env.POSTGRES_URL;
+  else process.env.POSTGRES_URL = previous.postgresUrl;
 });
 
 test("mobile header has collapsible navigation without changing desktop nav destinations", () => {
@@ -321,6 +386,67 @@ test("manual owner leads use canonical sheet columns and owner-only API", () => 
   assert.equal(row[REQUIRED_SHEET_COLUMNS.indexOf("Name")], "'=Prospect");
   assert.equal(row[REQUIRED_SHEET_COLUMNS.indexOf("Project Description")], "'+Garage cleanout lead");
   assert.equal(row[REQUIRED_SHEET_COLUMNS.indexOf("Internal Notes")], "Manual owner lead. -Call next week");
+});
+
+test("contractor lead submissions are server-attributed and do not expose owner tools", () => {
+  const routeSource = readFileSync("app/api/contractor/leads/route.ts", "utf8");
+  const loginSource = readFileSync("app/login/page.tsx", "utf8");
+  const operationsSource = readFileSync("app/login/OperationsPortalClient.tsx", "utf8");
+
+  assert.equal(routeSource.includes("requireAnyRoleAsync(request, [ROLE_CONTRACTOR])"), true);
+  assert.equal(routeSource.includes("appendContractorLeadToSheet"), true);
+  assert.equal(routeSource.includes("authorization.user"), true);
+  assert.equal(routeSource.includes("sendOwnerNewLeadNotification"), false);
+  assert.equal(routeSource.includes("createCalendarEvent"), false);
+  assert.equal(loginSource.includes("Welcome, {user.label}."), true);
+  assert.equal(loginSource.includes("user && user.role !== ROLE_CONTRACTOR ? await getActiveJobs() : []"), true);
+  assert.equal(loginSource.includes("Confirmed Assignments"), true);
+  assert.equal(loginSource.includes("Submit a Lead"), true);
+  assert.equal(operationsSource.includes('"contractors"'), true);
+  assert.equal(operationsSource.includes("Contractors"), true);
+
+  const result = validateManualLeadInput({
+    name: "=Contractor Prospect",
+    opportunityInfo: "+Garage cleanout",
+    phone: "949-424-5605",
+    email: "prospect@example.com",
+    streetAddress: "@Address",
+    city: "Mission Viejo",
+    notes: "-Contractor note",
+  });
+  assert.equal(result.ok, true);
+  if (!result.ok) return;
+
+  const row = mapContractorLeadToColumns(
+    "WHS-20260907-CTR001",
+    result.value,
+    { role: ROLE_CONTRACTOR, label: "Alejandro", id: "ctr_123", email: "alejandro@example.com" },
+    REQUIRED_SHEET_COLUMNS,
+  );
+  assert.equal(row[REQUIRED_SHEET_COLUMNS.indexOf("Status")], MANUAL_LEAD_STATUS);
+  assert.equal(row[REQUIRED_SHEET_COLUMNS.indexOf("Source")], CONTRACTOR_LEAD_SOURCE);
+  assert.equal(row[REQUIRED_SHEET_COLUMNS.indexOf("Submitted By User ID")], "ctr_123");
+  assert.equal(row[REQUIRED_SHEET_COLUMNS.indexOf("Submitted By Name")], "Alejandro");
+  assert.equal(row[REQUIRED_SHEET_COLUMNS.indexOf("Submitted By Role")], ROLE_CONTRACTOR);
+  assert.equal(row[REQUIRED_SHEET_COLUMNS.indexOf("Name")], "'=Contractor Prospect");
+});
+
+test("contractor account management is owner-only and deactivation-aware", () => {
+  const createRoute = readFileSync("app/api/owner/contractors/route.ts", "utf8");
+  const deactivateRoute = readFileSync("app/api/owner/contractors/deactivate/route.ts", "utf8");
+  const authSource = readFileSync("app/lib/booking/ownerAuth.ts", "utf8");
+  const dbSource = readFileSync("app/lib/contractors/database.ts", "utf8");
+
+  assert.equal(createRoute.includes("requireRole(request, ROLE_OWNER)"), true);
+  assert.equal(deactivateRoute.includes("requireRole(request, ROLE_OWNER)"), true);
+  assert.equal(createRoute.includes("createContractorAccount"), true);
+  assert.equal(deactivateRoute.includes("deactivateContractorAccount"), true);
+  assert.equal(authSource.includes("verifyOperationsSessionAsync"), true);
+  assert.equal(authSource.includes("getActiveContractorAccount(user.id)"), true);
+  assert.equal(dbSource.includes("CONTRACTOR_STATUS_DEACTIVATED"), true);
+  assert.equal(dbSource.includes("password_hash text NOT NULL"), true);
+  assert.equal(dbSource.includes("contractor_time_records"), true);
+  assert.equal(dbSource.includes("UNIQUE REFERENCES contractor_assignments(id)"), true);
 });
 
 test("manual lead conversion and decline are owner-only persisted transitions", () => {

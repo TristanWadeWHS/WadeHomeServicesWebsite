@@ -104,6 +104,9 @@ export type SheetLead = {
   historicalTransferStatus: string;
   historicalTransferTimestamp: string;
   auditTrail: string;
+  submittedByUserId: string;
+  submittedByName: string;
+  submittedByRole: string;
 };
 
 export type OwnerDecisionResult = {

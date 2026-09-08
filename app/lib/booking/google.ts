@@ -11,11 +11,13 @@ import {
   MANUAL_LEAD_STATUS,
   REQUIRED_SHEET_COLUMNS,
 } from "./config";
+import type { OperationsUser } from "./ownerAuth";
 import type { BusyWindow } from "./scheduling";
 import { isSlotStillAvailable } from "./scheduling";
 import type { NormalizedLead, NormalizedManualLead, OwnerDecisionResult, SheetLead } from "./types";
 import {
   escapeSheetCell,
+  mapContractorLeadToColumns,
   mapLeadToColumns,
   mapManualLeadToColumns,
   parsePhotoReferences,
@@ -180,6 +182,46 @@ export async function appendManualLeadToSheet(leadId: string, lead: NormalizedMa
   if (!response.ok) {
     throw new Error(
       `Google Sheets manual lead append failed with ${response.status}: ${await response.text()}`,
+    );
+  }
+
+  return sheetRowToLead(completeHeaders, row, 0);
+}
+
+export async function appendContractorLeadToSheet(
+  leadId: string,
+  lead: NormalizedManualLead,
+  submittedBy: OperationsUser,
+) {
+  const spreadsheetId = requireSpreadsheetId();
+  const sheetName = process.env.GOOGLE_SHEET_TAB || "Open Leads";
+  const token = await getGoogleAccessToken([SHEETS_SCOPE]);
+  const headers = await getSheetHeaders(spreadsheetId, sheetName, token);
+  const completeHeaders = await ensureSheetHeaders(
+    spreadsheetId,
+    sheetName,
+    token,
+    headers,
+  );
+  const row = mapContractorLeadToColumns(leadId, lead, submittedBy, completeHeaders);
+
+  const response = await fetch(
+    `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${encodeURIComponent(
+      sheetName,
+    )}!A1:append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS`,
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ values: [row] }),
+    },
+  );
+
+  if (!response.ok) {
+    throw new Error(
+      `Google Sheets contractor lead append failed with ${response.status}: ${await response.text()}`,
     );
   }
 
@@ -918,6 +960,9 @@ function sheetRowToLead(
     historicalTransferStatus: value("Historical Transfer Status"),
     historicalTransferTimestamp: value("Historical Transfer Timestamp"),
     auditTrail: value("Audit Trail"),
+    submittedByUserId: value("Submitted By User ID"),
+    submittedByName: value("Submitted By Name"),
+    submittedByRole: value("Submitted By Role"),
   };
 }
 
@@ -962,6 +1007,9 @@ function leadToRow(headers: readonly string[], lead: SheetLead) {
     "Historical Transfer Status": lead.historicalTransferStatus,
     "Historical Transfer Timestamp": lead.historicalTransferTimestamp,
     "Audit Trail": lead.auditTrail,
+    "Submitted By User ID": lead.submittedByUserId,
+    "Submitted By Name": lead.submittedByName,
+    "Submitted By Role": lead.submittedByRole,
   };
   return headers.map((header) => values[header] ?? "");
 }

@@ -10,10 +10,12 @@ import {
   ownerSessionCookieOptions,
   OWNER_SESSION_ACTIVE_COOKIE,
   OWNER_SESSION_COOKIE,
+  ROLE_CONTRACTOR,
   ROLE_OWNER,
   roleForToken,
 } from "@/app/lib/booking/ownerAuth";
 import { clientIp, rateLimit, requestBodyWithinLimit } from "@/app/lib/booking/security";
+import { authenticateContractorAccount } from "@/app/lib/contractors/database";
 import { NextResponse } from "next/server";
 
 export const runtime = "nodejs";
@@ -27,7 +29,14 @@ export async function POST(request: Request) {
 
   const form = await request.formData();
   const token = String(form.get("token") ?? "");
-  const user = roleForToken(token);
+  const email = String(form.get("email") ?? "");
+  const contractor = await authenticateContractorAccount(email, token);
+  const user = roleForToken(token) ?? (contractor ? {
+    role: ROLE_CONTRACTOR,
+    label: contractor.displayName,
+    id: contractor.id,
+    email: contractor.email,
+  } : null);
   if (!user) return redirectToLogin(request);
 
   const response = redirectToLogin(request);

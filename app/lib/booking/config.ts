@@ -13,6 +13,7 @@ export const LEAD_STATUS = "Pending Approval";
 export const MANUAL_LEAD_STATUS = "Lead";
 export const LEAD_SOURCE = "Website";
 export const MANUAL_LEAD_SOURCE = "Owner Portal";
+export const CONTRACTOR_LEAD_SOURCE = "Contractor Portal";
 
 export const WEBSITE_LEAD_COLUMNS = [
   "Unique ID",
@@ -62,10 +63,17 @@ export const OPERATIONS_SHEET_COLUMNS = [
   "Audit Trail",
 ] as const;
 
+export const CONTRACTOR_ATTRIBUTION_COLUMNS = [
+  "Submitted By User ID",
+  "Submitted By Name",
+  "Submitted By Role",
+] as const;
+
 export const REQUIRED_SHEET_COLUMNS = [
   ...WEBSITE_LEAD_COLUMNS,
   ...PHASE_3_SHEET_COLUMNS,
   ...OPERATIONS_SHEET_COLUMNS,
+  ...CONTRACTOR_ATTRIBUTION_COLUMNS,
 ] as const;
 
 export const APPROVED_STATUS = "Approved / Scheduled";

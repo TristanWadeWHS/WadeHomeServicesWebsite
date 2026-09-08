@@ -1,5 +1,6 @@
 import {
   APPOINTMENT_TYPES,
+  CONTRACTOR_LEAD_SOURCE,
   LEAD_SOURCE,
   LEAD_STATUS,
   MANUAL_LEAD_SOURCE,
@@ -12,6 +13,7 @@ import type {
   NormalizedManualLead,
   PhotoReference,
 } from "./types";
+import type { OperationsUser } from "./ownerAuth";
 
 export type ValidationResult<T> =
   | { ok: true; value: T }
@@ -262,6 +264,34 @@ export function mapManualLeadToColumns(
     "Project Description": lead.opportunityInfo,
     Source: MANUAL_LEAD_SOURCE,
     "Internal Notes": lead.notes ? `Manual owner lead. ${lead.notes}` : "Manual owner lead.",
+  };
+
+  return headers.map((header) => escapeSheetCell(values[header] ?? ""));
+}
+
+export function mapContractorLeadToColumns(
+  leadId: string,
+  lead: NormalizedManualLead,
+  submittedBy: OperationsUser,
+  headers: readonly string[],
+) {
+  const values: Record<string, string> = {
+    "Unique ID": leadId,
+    "Created At": new Date().toISOString(),
+    Status: MANUAL_LEAD_STATUS,
+    Name: lead.name,
+    Email: lead.normalizedEmail,
+    "Phone Number": lead.phone,
+    "Street Address": lead.streetAddress,
+    City: lead.city,
+    "Project Description": lead.opportunityInfo,
+    Source: CONTRACTOR_LEAD_SOURCE,
+    "Internal Notes": lead.notes
+      ? `Contractor-submitted lead. ${lead.notes}`
+      : "Contractor-submitted lead.",
+    "Submitted By User ID": submittedBy.id ?? "",
+    "Submitted By Name": submittedBy.label,
+    "Submitted By Role": submittedBy.role,
   };
 
   return headers.map((header) => escapeSheetCell(values[header] ?? ""));

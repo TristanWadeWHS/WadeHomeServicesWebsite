@@ -13,10 +13,13 @@ import {
   MANUAL_LEAD_STATUS,
 } from "../lib/booking/config";
 import { ROLE_OWNER, type OperationsUser } from "../lib/booking/ownerAuth";
+import type { ContractorAccount } from "../lib/contractors/types";
 import type { OwnerDecisionResult, SheetLead } from "../lib/booking/types";
 
 type OperationsPortalClientProps = {
   activeJobs: SheetLead[];
+  contractorDbConfigured: boolean;
+  contractors: ContractorAccount[];
   leads: SheetLead[];
   requests: SheetLead[];
   user: OperationsUser;
@@ -33,6 +36,7 @@ type BusyAction = {
 } | null;
 
 type PortalTab = "requests" | "active" | "leads";
+type OwnerPortalTab = PortalTab | "contractors";
 type LeadAction = "convert" | "decline";
 
 type OperationsResult = {
@@ -64,6 +68,8 @@ const emptyManualLead: ManualLeadForm = {
 
 export function OperationsPortalClient({
   activeJobs,
+  contractorDbConfigured,
+  contractors,
   leads,
   requests,
   user,
@@ -75,9 +81,17 @@ export function OperationsPortalClient({
   const [busyAction, setBusyAction] = useState<BusyAction>(null);
   const [showLeadForm, setShowLeadForm] = useState(false);
   const [manualLead, setManualLead] = useState<ManualLeadForm>(emptyManualLead);
+  const [contractorAccounts, setContractorAccounts] = useState(contractors);
+  const [contractorForm, setContractorForm] = useState({
+    displayName: "",
+    email: "",
+    temporaryPassword: "",
+  });
   const isOwner = user.role === ROLE_OWNER;
-  const [activeTab, setActiveTab] = useState<PortalTab>(isOwner ? "requests" : "active");
-  const availableTabs: PortalTab[] = isOwner ? ["requests", "active", "leads"] : ["active"];
+  const [activeTab, setActiveTab] = useState<OwnerPortalTab>(isOwner ? "requests" : "active");
+  const availableTabs: OwnerPortalTab[] = isOwner
+    ? ["requests", "active", "leads", "contractors"]
+    : ["active"];
 
   function handleTabKeyDown(event: KeyboardEvent<HTMLButtonElement>) {
     if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
@@ -154,6 +168,64 @@ export function OperationsPortalClient({
       setNotice({ tone: "success", message: "Lead created." });
     } catch {
       setNotice({ tone: "error", message: "Lead could not be created. Please try again." });
+    } finally {
+      setBusyAction(null);
+    }
+  }
+
+  async function createContractorAccount() {
+    setNotice(null);
+    setBusyAction({ leadId: "contractor-account", action: "create" });
+    try {
+      const response = await fetch("/api/owner/contractors", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(contractorForm),
+        credentials: "same-origin",
+      });
+      const payload = await readJson(response) as ContractorResult | null;
+      const contractor = payload?.contractor;
+      if (!response.ok || !payload?.ok || !contractor) {
+        setNotice({ tone: "error", message: friendlyError(payload) });
+        return;
+      }
+      setContractorAccounts((current) => [contractor, ...current]);
+      setContractorForm({ displayName: "", email: "", temporaryPassword: "" });
+      setNotice({ tone: "success", message: "Contractor account created." });
+    } catch {
+      setNotice({ tone: "error", message: "Contractor account could not be created." });
+    } finally {
+      setBusyAction(null);
+    }
+  }
+
+  async function deactivateContractorAccount(contractorId: string) {
+    setNotice(null);
+    setBusyAction({ leadId: contractorId, action: "deactivate-contractor" });
+    const form = new FormData();
+    form.set("contractorId", contractorId);
+    try {
+      const response = await fetch("/api/owner/contractors/deactivate", {
+        method: "POST",
+        body: form,
+        credentials: "same-origin",
+      });
+      const payload = await readJson(response) as ContractorResult | null;
+      const contractor = payload?.contractor;
+      if (contractor) {
+        setContractorAccounts((current) =>
+          current.map((account) =>
+            account.id === contractor.id ? contractor : account,
+          ),
+        );
+      }
+      if (!response.ok || !payload?.ok) {
+        setNotice({ tone: "error", message: friendlyError(payload) });
+        return;
+      }
+      setNotice({ tone: "success", message: "Contractor account deactivated." });
+    } catch {
+      setNotice({ tone: "error", message: "Contractor account could not be updated." });
     } finally {
       setBusyAction(null);
     }
@@ -337,6 +409,20 @@ export function OperationsPortalClient({
             Leads
           </button>
         ) : null}
+        {isOwner ? (
+          <button
+            aria-controls="operations-panel-contractors"
+            aria-selected={activeTab === "contractors"}
+            className="operations-tab"
+            id="operations-tab-contractors"
+            onKeyDown={handleTabKeyDown}
+            onClick={() => setActiveTab("contractors")}
+            role="tab"
+            type="button"
+          >
+            Contractors
+          </button>
+        ) : null}
       </div>
 
       {isOwner && activeTab === "requests" ? (
@@ -426,7 +512,149 @@ export function OperationsPortalClient({
           ))}
         </section>
       ) : null}
+
+      {isOwner && activeTab === "contractors" ? (
+        <section className="operations-section" id="operations-panel-contractors" role="tabpanel" aria-labelledby="operations-tab-contractors">
+          <div className="operations-section__header">
+            <div>
+              <h3>Contractors</h3>
+              <p>Invite individual contractor accounts and remove access when someone is deactivated.</p>
+            </div>
+          </div>
+          {!contractorDbConfigured ? (
+            <div className="owner-empty">
+              <h2>Contractor database is not configured.</h2>
+              <p>Configure CONTRACTOR_DATABASE_URL before contractor accounts can be created.</p>
+            </div>
+          ) : (
+            <>
+              <ContractorInvitePanel
+                busy={busyAction?.leadId === "contractor-account"}
+                form={contractorForm}
+                onChange={setContractorForm}
+                onCreate={createContractorAccount}
+              />
+              {contractorAccounts.length === 0 ? (
+                <div className="owner-empty">
+                  <h2>No contractor accounts yet.</h2>
+                  <p>Owner-invited contractors will appear here after they are created.</p>
+                </div>
+              ) : null}
+              {contractorAccounts.map((contractor) => (
+                <ContractorAccountCard
+                  busy={busyAction?.leadId === contractor.id}
+                  contractor={contractor}
+                  key={contractor.id}
+                  onDeactivate={deactivateContractorAccount}
+                />
+              ))}
+            </>
+          )}
+        </section>
+      ) : null}
     </div>
+  );
+}
+
+type ContractorResult = {
+  ok: boolean;
+  message?: string;
+  contractor?: ContractorAccount;
+};
+
+function ContractorInvitePanel({
+  busy,
+  form,
+  onChange,
+  onCreate,
+}: {
+  busy: boolean;
+  form: { displayName: string; email: string; temporaryPassword: string };
+  onChange: (form: { displayName: string; email: string; temporaryPassword: string }) => void;
+  onCreate: () => Promise<void>;
+}) {
+  return (
+    <section className="manual-lead-panel" aria-label="Invite contractor">
+      <div className="field-grid">
+        <label className="field">
+          <span>Name</span>
+          <input
+            disabled={busy}
+            maxLength={120}
+            onChange={(event) => onChange({ ...form, displayName: event.target.value })}
+            required
+            type="text"
+            value={form.displayName}
+          />
+        </label>
+        <label className="field">
+          <span>Email</span>
+          <input
+            autoComplete="off"
+            disabled={busy}
+            onChange={(event) => onChange({ ...form, email: event.target.value })}
+            required
+            type="email"
+            value={form.email}
+          />
+        </label>
+        <label className="field">
+          <span>Temporary Password</span>
+          <input
+            autoComplete="new-password"
+            disabled={busy}
+            minLength={12}
+            onChange={(event) => onChange({ ...form, temporaryPassword: event.target.value })}
+            required
+            type="password"
+            value={form.temporaryPassword}
+          />
+        </label>
+      </div>
+      <div className="owner-actions owner-actions--compact">
+        <button
+          className="button button--primary"
+          disabled={busy || !form.displayName.trim() || !form.email.trim() || form.temporaryPassword.trim().length < 12}
+          onClick={onCreate}
+          type="button"
+        >
+          {busy ? "Creating..." : "Create Contractor Account"}
+        </button>
+      </div>
+    </section>
+  );
+}
+
+function ContractorAccountCard({
+  busy,
+  contractor,
+  onDeactivate,
+}: {
+  busy: boolean;
+  contractor: ContractorAccount;
+  onDeactivate: (contractorId: string) => Promise<void>;
+}) {
+  const isActive = contractor.status === "ACTIVE";
+  return (
+    <article className="owner-lead contractor-account-card">
+      <div className="owner-lead__header">
+        <div>
+          <p className="eyebrow">{contractor.status}</p>
+          <h2>{contractor.displayName}</h2>
+          <p>{contractor.email}</p>
+        </div>
+        {isActive ? (
+          <button
+            className="button button--dark"
+            disabled={busy}
+            onClick={() => onDeactivate(contractor.id)}
+            type="button"
+          >
+            {busy ? "Deactivating..." : "Deactivate"}
+          </button>
+        ) : null}
+      </div>
+    </article>
   );
 }
 
