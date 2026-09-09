@@ -13,8 +13,14 @@ import {
   ROLE_CONTRACTOR,
   type OperationsUser,
 } from "../lib/booking/ownerAuth";
-import { contractorDatabaseConfigured, listContractorAccounts } from "../lib/contractors/database";
+import {
+  contractorDatabaseConfigured,
+  listAllContractorAvailability,
+  listAvailabilityForContractor,
+  listContractorAccounts,
+} from "../lib/contractors/database";
 import { OperationsPortalClient } from "./OperationsPortalClient";
+import { ContractorPortalClient } from "./ContractorPortalClient";
 
 export default async function LoginPage() {
   const user = await getOperationsUserFromCookies();
@@ -25,6 +31,14 @@ export default async function LoginPage() {
   const contractors =
     user?.role === ROLE_OWNER && contractorDatabaseConfigured()
       ? await listContractorAccounts()
+      : [];
+  const allAvailability =
+    user?.role === ROLE_OWNER && contractorDatabaseConfigured()
+      ? await listAllContractorAvailability()
+      : [];
+  const contractorAvailability =
+    user?.role === ROLE_CONTRACTOR && user.id && contractorDatabaseConfigured()
+      ? await listAvailabilityForContractor(user.id)
       : [];
   const contractorDbConfigured = contractorDatabaseConfigured();
 
@@ -64,12 +78,17 @@ export default async function LoginPage() {
         ) : null}
 
         {user?.role === ROLE_CONTRACTOR ? (
-          <ContractorPortal user={user} />
+          <ContractorPortalClient
+            availability={contractorAvailability}
+            databaseConfigured={contractorDbConfigured}
+            user={user}
+          />
         ) : null}
 
         {user && user.role !== ROLE_CONTRACTOR ? (
           <OperationsPortalClient
             activeJobs={activeJobs}
+            availability={allAvailability}
             contractors={contractors}
             contractorDbConfigured={contractorDbConfigured}
             leads={leads}
@@ -106,88 +125,4 @@ async function getOperationsUserFromCookies(): Promise<OperationsUser | null> {
   }
 
   return null;
-}
-
-function ContractorPortal({ user }: { user: OperationsUser }) {
-  return (
-    <div className="operations-portal contractor-portal">
-      <div className="operations-toolbar">
-        <div>
-          <p className="eyebrow">Contractor Portal</p>
-          <h2>Welcome, {user.label}.</h2>
-        </div>
-        <form action="/api/session/logout" method="post">
-          <button className="button button--dark" type="submit">Log Out</button>
-        </form>
-      </div>
-
-      <section className="owner-lead">
-        <h3>Confirmed Assignments</h3>
-        <p className="portal-empty-copy">
-          No confirmed assignments are available yet. When Wade Home Services assigns work to you,
-          job-safe details will appear here.
-        </p>
-      </section>
-
-      <section className="owner-lead">
-        <h3>Availability</h3>
-        <p className="portal-empty-copy">
-          Availability entry is the next implementation phase. Regular availability and on-call
-          windows will stay separate.
-        </p>
-      </section>
-
-      <section className="owner-lead">
-        <h3>Work History</h3>
-        <p className="portal-empty-copy">
-          Approved hours and previous shifts will appear here after the time-record phase is built.
-        </p>
-      </section>
-
-      <ContractorLeadForm />
-    </div>
-  );
-}
-
-function ContractorLeadForm() {
-  return (
-    <form className="owner-lead" action="/api/contractor/leads" method="post">
-      <h3>Submit a Lead</h3>
-      <p className="portal-empty-copy">
-        Send a prospective opportunity to Wade Home Services. Your account will be recorded as the
-        submitting contractor.
-      </p>
-      <div className="field-grid">
-        <label className="field">
-          <span>Name</span>
-          <input maxLength={160} name="name" required type="text" />
-        </label>
-        <label className="field">
-          <span>Phone</span>
-          <input inputMode="tel" name="phone" type="tel" />
-        </label>
-        <label className="field">
-          <span>Email</span>
-          <input name="email" type="email" />
-        </label>
-        <label className="field">
-          <span>Address</span>
-          <input maxLength={240} name="streetAddress" type="text" />
-        </label>
-        <label className="field">
-          <span>City</span>
-          <input maxLength={120} name="city" type="text" />
-        </label>
-      </div>
-      <label className="field">
-        <span>Opportunity Info</span>
-        <textarea maxLength={1400} name="opportunityInfo" required />
-      </label>
-      <label className="field">
-        <span>Notes</span>
-        <textarea maxLength={800} name="notes" />
-      </label>
-      <button className="button button--primary" type="submit">Submit Lead</button>
-    </form>
-  );
 }

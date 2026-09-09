@@ -391,6 +391,7 @@ test("manual owner leads use canonical sheet columns and owner-only API", () => 
 test("contractor lead submissions are server-attributed and do not expose owner tools", () => {
   const routeSource = readFileSync("app/api/contractor/leads/route.ts", "utf8");
   const loginSource = readFileSync("app/login/page.tsx", "utf8");
+  const contractorUi = readFileSync("app/login/ContractorPortalClient.tsx", "utf8");
   const operationsSource = readFileSync("app/login/OperationsPortalClient.tsx", "utf8");
 
   assert.equal(routeSource.includes("requireAnyRoleAsync(request, [ROLE_CONTRACTOR])"), true);
@@ -398,10 +399,10 @@ test("contractor lead submissions are server-attributed and do not expose owner 
   assert.equal(routeSource.includes("authorization.user"), true);
   assert.equal(routeSource.includes("sendOwnerNewLeadNotification"), false);
   assert.equal(routeSource.includes("createCalendarEvent"), false);
-  assert.equal(loginSource.includes("Welcome, {user.label}."), true);
   assert.equal(loginSource.includes("user && user.role !== ROLE_CONTRACTOR ? await getActiveJobs() : []"), true);
-  assert.equal(loginSource.includes("Confirmed Assignments"), true);
-  assert.equal(loginSource.includes("Submit a Lead"), true);
+  assert.equal(contractorUi.includes("Welcome, {user.label}."), true);
+  assert.equal(contractorUi.includes("Confirmed Assignments"), true);
+  assert.equal(contractorUi.includes("Submit a Lead"), true);
   assert.equal(operationsSource.includes('"contractors"'), true);
   assert.equal(operationsSource.includes("Contractors"), true);
 
@@ -447,6 +448,55 @@ test("contractor account management is owner-only and deactivation-aware", () =>
   assert.equal(dbSource.includes("password_hash text NOT NULL"), true);
   assert.equal(dbSource.includes("contractor_time_records"), true);
   assert.equal(dbSource.includes("UNIQUE REFERENCES contractor_assignments(id)"), true);
+});
+
+test("availability APIs enforce contractor ownership and owner overview boundaries", () => {
+  const contractorRoute = readFileSync("app/api/contractor/availability/route.ts", "utf8");
+  const ownerRoute = readFileSync("app/api/owner/availability/route.ts", "utf8");
+  const dbSource = readFileSync("app/lib/contractors/database.ts", "utf8");
+  const contractorUi = readFileSync("app/login/ContractorPortalClient.tsx", "utf8");
+  const ownerUi = readFileSync("app/login/OperationsPortalClient.tsx", "utf8");
+
+  assert.equal(contractorRoute.includes("requireAnyRoleAsync(request, [ROLE_CONTRACTOR])"), true);
+  assert.equal(contractorRoute.includes("createContractorAvailability"), true);
+  assert.equal(contractorRoute.includes("updateContractorAvailability"), true);
+  assert.equal(contractorRoute.includes("withdrawContractorAvailability"), true);
+  assert.equal(ownerRoute.includes("requireRole(request, ROLE_OWNER)"), true);
+  assert.equal(ownerRoute.includes("listAllContractorAvailability"), true);
+  assert.equal(ownerRoute.includes("AVAILABILITY_TYPE_DESIGNATED_SHIFT"), false);
+
+  assert.equal(dbSource.includes("findOverlappingAvailability"), true);
+  assert.equal(dbSource.includes("Only the owner can create designated shifts."), true);
+  assert.equal(dbSource.includes("America/Los_Angeles"), true);
+  assert.equal(dbSource.includes("Past dates are not available."), true);
+  assert.equal(dbSource.includes("status = ${AVAILABILITY_STATUS_WITHDRAWN}"), true);
+  assert.equal(dbSource.includes("actor.isOwner && existing.contractorId !== actor.id"), true);
+
+  assert.equal(contractorUi.includes("Regular Availability"), true);
+  assert.equal(contractorUi.includes("On-call Window"), true);
+  assert.equal(contractorUi.includes("Date-specific Exception"), true);
+  assert.equal(contractorUi.includes("Repeats Weekly"), true);
+  assert.equal(contractorUi.includes("Specific Date"), true);
+  assert.equal(ownerUi.includes("Availability"), true);
+  assert.equal(ownerUi.includes("Add Designated Shift"), true);
+  assert.equal(ownerUi.includes("All contractors"), true);
+});
+
+test("contractor migration is explicit and includes future operations tables", () => {
+  const migration = readFileSync("db/migrations/001_contractor_portal_foundation.sql", "utf8");
+  const availabilityMigration = readFileSync("db/migrations/002_contractor_availability_metadata.sql", "utf8");
+  const runner = readFileSync("scripts/apply-contractor-migrations.mjs", "utf8");
+
+  assert.equal(migration.includes("CREATE TABLE IF NOT EXISTS contractor_accounts"), true);
+  assert.equal(migration.includes("CREATE TABLE IF NOT EXISTS contractor_availability"), true);
+  assert.equal(migration.includes("CREATE TABLE IF NOT EXISTS contractor_assignments"), true);
+  assert.equal(migration.includes("CREATE TABLE IF NOT EXISTS contractor_time_records"), true);
+  assert.equal(migration.includes("UNIQUE (lead_id, contractor_id)"), true);
+  assert.equal(migration.includes("assignment_id text NOT NULL UNIQUE"), true);
+  assert.equal(availabilityMigration.includes("ADD COLUMN IF NOT EXISTS created_by"), true);
+  assert.equal(availabilityMigration.includes("ADD COLUMN IF NOT EXISTS withdrawn_at"), true);
+  assert.equal(runner.includes("CONTRACTOR_DATABASE_URL"), true);
+  assert.equal(runner.includes("migrationFiles"), true);
 });
 
 test("manual lead conversion and decline are owner-only persisted transitions", () => {

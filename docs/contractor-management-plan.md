@@ -33,18 +33,30 @@ Acceptance criteria:
 
 ## Phase 2: Availability Entry And Owner Overview
 
+Implemented direction:
+
+- Add contractor-owned regular availability, on-call windows, and date-specific exceptions.
+- Add owner-only designated shift entry.
+- Add owner overview and filters for contractor availability.
+- Keep availability separate from confirmed assignments.
+
 Data:
 
 - `contractor_availability`
 - Distinguish `REGULAR` and `ON_CALL` availability.
-- Store date/day, start time, end time, timezone, status, and notes.
+- Store date/day, start time, end time, timezone, status, notes, created-by metadata, and withdrawal timestamp.
 
 Acceptance criteria:
 
 - Contractors can manage only their own availability.
 - Regular availability and on-call windows are entered and displayed separately.
+- Contractors can edit or withdraw their own active availability.
+- Owner can add date-specific designated shifts for a contractor.
 - Owner can view all contractors' availability.
+- Owner can filter availability by contractor and type.
 - Availability remains distinct from confirmed job assignments.
+- Overlapping active windows are rejected for the same contractor and same date/day.
+- America/Los_Angeles is used as the business timezone.
 - Deactivated contractor history remains readable to owner.
 
 ## Phase 3: Assignment Model And Owner Approval
@@ -121,6 +133,7 @@ Acceptance criteria:
 ## Setup Requirements
 
 - Provision a Postgres-compatible database for contractor operations.
-- Set `CONTRACTOR_DATABASE_URL` in Preview and Production before contractor accounts are usable.
-- Apply `db/migrations/001_contractor_portal_foundation.sql` to the contractor database, or let the app run its matching idempotent schema creation path on first authenticated owner/contractor use.
+- Preview uses an isolated Vercel Marketplace Neon resource connected only to the Preview environment.
+- Set `CONTRACTOR_DATABASE_URL` before contractor accounts are usable. Production remains intentionally unconfigured until a production contractor-data release is approved.
+- Apply all `db/migrations/*.sql` with `scripts/apply-contractor-migrations.mjs`, or let the app run its matching idempotent schema creation path on first authenticated owner/contractor use.
 - No `ACCOUNT_MANAGER` role is planned yet.

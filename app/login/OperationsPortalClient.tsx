@@ -13,11 +13,20 @@ import {
   MANUAL_LEAD_STATUS,
 } from "../lib/booking/config";
 import { ROLE_OWNER, type OperationsUser } from "../lib/booking/ownerAuth";
-import type { ContractorAccount } from "../lib/contractors/types";
+import {
+  AVAILABILITY_TYPE_DESIGNATED_SHIFT,
+  type ContractorAccount,
+  type ContractorAvailability,
+} from "../lib/contractors/types";
+import {
+  availabilityScheduleLabel,
+  availabilityTypeLabel,
+} from "./ContractorPortalClient";
 import type { OwnerDecisionResult, SheetLead } from "../lib/booking/types";
 
 type OperationsPortalClientProps = {
   activeJobs: SheetLead[];
+  availability: ContractorAvailability[];
   contractorDbConfigured: boolean;
   contractors: ContractorAccount[];
   leads: SheetLead[];
@@ -36,7 +45,7 @@ type BusyAction = {
 } | null;
 
 type PortalTab = "requests" | "active" | "leads";
-type OwnerPortalTab = PortalTab | "contractors";
+type OwnerPortalTab = PortalTab | "contractors" | "availability";
 type LeadAction = "convert" | "decline";
 
 type OperationsResult = {
@@ -68,6 +77,7 @@ const emptyManualLead: ManualLeadForm = {
 
 export function OperationsPortalClient({
   activeJobs,
+  availability,
   contractorDbConfigured,
   contractors,
   leads,
@@ -82,6 +92,16 @@ export function OperationsPortalClient({
   const [showLeadForm, setShowLeadForm] = useState(false);
   const [manualLead, setManualLead] = useState<ManualLeadForm>(emptyManualLead);
   const [contractorAccounts, setContractorAccounts] = useState(contractors);
+  const [availabilityRows, setAvailabilityRows] = useState(availability);
+  const [availabilityFilter, setAvailabilityFilter] = useState({ contractorId: "", availabilityType: "" });
+  const [designatedShift, setDesignatedShift] = useState({
+    contractorId: contractors[0]?.id ?? "",
+    availabilityType: AVAILABILITY_TYPE_DESIGNATED_SHIFT,
+    availabilityDate: "",
+    startTime: "08:00",
+    endTime: "17:00",
+    notes: "",
+  });
   const [contractorForm, setContractorForm] = useState({
     displayName: "",
     email: "",
@@ -90,7 +110,7 @@ export function OperationsPortalClient({
   const isOwner = user.role === ROLE_OWNER;
   const [activeTab, setActiveTab] = useState<OwnerPortalTab>(isOwner ? "requests" : "active");
   const availableTabs: OwnerPortalTab[] = isOwner
-    ? ["requests", "active", "leads", "contractors"]
+    ? ["requests", "active", "leads", "contractors", "availability"]
     : ["active"];
 
   function handleTabKeyDown(event: KeyboardEvent<HTMLButtonElement>) {
@@ -226,6 +246,66 @@ export function OperationsPortalClient({
       setNotice({ tone: "success", message: "Contractor account deactivated." });
     } catch {
       setNotice({ tone: "error", message: "Contractor account could not be updated." });
+    } finally {
+      setBusyAction(null);
+    }
+  }
+
+  async function createDesignatedShift() {
+    setNotice(null);
+    setBusyAction({ leadId: "owner-availability", action: "create" });
+    try {
+      const response = await fetch("/api/owner/availability", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(designatedShift),
+        credentials: "same-origin",
+      });
+      const payload = await readJson(response) as AvailabilityResult | null;
+      const savedAvailability = payload?.availability;
+      if (!response.ok || !payload?.ok || !savedAvailability) {
+        setNotice({ tone: "error", message: friendlyError(payload) });
+        return;
+      }
+      setAvailabilityRows((current) => upsertAvailability(current, savedAvailability));
+      setDesignatedShift({
+        contractorId: designatedShift.contractorId,
+        availabilityType: AVAILABILITY_TYPE_DESIGNATED_SHIFT,
+        availabilityDate: "",
+        startTime: "08:00",
+        endTime: "17:00",
+        notes: "",
+      });
+      setNotice({ tone: "success", message: "Designated shift saved." });
+    } catch {
+      setNotice({ tone: "error", message: "Designated shift could not be saved." });
+    } finally {
+      setBusyAction(null);
+    }
+  }
+
+  async function withdrawOwnerAvailability(availabilityId: string) {
+    setNotice(null);
+    setBusyAction({ leadId: availabilityId, action: "withdraw-availability" });
+    try {
+      const response = await fetch("/api/owner/availability", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ availabilityId }),
+        credentials: "same-origin",
+      });
+      const payload = await readJson(response) as AvailabilityResult | null;
+      const withdrawnAvailability = payload?.availability;
+      if (withdrawnAvailability) {
+        setAvailabilityRows((current) => upsertAvailability(current, withdrawnAvailability));
+      }
+      if (!response.ok || !payload?.ok) {
+        setNotice({ tone: "error", message: friendlyError(payload) });
+        return;
+      }
+      setNotice({ tone: "success", message: "Availability withdrawn." });
+    } catch {
+      setNotice({ tone: "error", message: "Availability could not be withdrawn." });
     } finally {
       setBusyAction(null);
     }
@@ -423,6 +503,20 @@ export function OperationsPortalClient({
             Contractors
           </button>
         ) : null}
+        {isOwner ? (
+          <button
+            aria-controls="operations-panel-availability"
+            aria-selected={activeTab === "availability"}
+            className="operations-tab"
+            id="operations-tab-availability"
+            onKeyDown={handleTabKeyDown}
+            onClick={() => setActiveTab("availability")}
+            role="tab"
+            type="button"
+          >
+            Availability
+          </button>
+        ) : null}
       </div>
 
       {isOwner && activeTab === "requests" ? (
@@ -552,6 +646,35 @@ export function OperationsPortalClient({
           )}
         </section>
       ) : null}
+
+      {isOwner && activeTab === "availability" ? (
+        <section className="operations-section" id="operations-panel-availability" role="tabpanel" aria-labelledby="operations-tab-availability">
+          <div className="operations-section__header">
+            <div>
+              <h3>Availability</h3>
+              <p>Review regular availability, on-call windows, exceptions, and owner-designated shifts.</p>
+            </div>
+          </div>
+          {!contractorDbConfigured ? (
+            <div className="owner-empty">
+              <h2>Contractor database is not configured.</h2>
+              <p>Configure CONTRACTOR_DATABASE_URL before availability can be reviewed.</p>
+            </div>
+          ) : (
+            <OwnerAvailabilityPanel
+              availability={availabilityRows}
+              busyId={busyAction?.leadId ?? null}
+              contractors={contractorAccounts}
+              designatedShift={designatedShift}
+              filters={availabilityFilter}
+              onCreate={createDesignatedShift}
+              onFilter={setAvailabilityFilter}
+              onShiftChange={setDesignatedShift}
+              onWithdraw={withdrawOwnerAvailability}
+            />
+          )}
+        </section>
+      ) : null}
     </div>
   );
 }
@@ -561,6 +684,151 @@ type ContractorResult = {
   message?: string;
   contractor?: ContractorAccount;
 };
+
+type AvailabilityResult = {
+  ok: boolean;
+  message?: string;
+  availability?: ContractorAvailability;
+};
+
+function OwnerAvailabilityPanel({
+  availability,
+  busyId,
+  contractors,
+  designatedShift,
+  filters,
+  onCreate,
+  onFilter,
+  onShiftChange,
+  onWithdraw,
+}: {
+  availability: ContractorAvailability[];
+  busyId: string | null;
+  contractors: ContractorAccount[];
+  designatedShift: {
+    contractorId: string;
+    availabilityType: string;
+    availabilityDate: string;
+    startTime: string;
+    endTime: string;
+    notes: string;
+  };
+  filters: { contractorId: string; availabilityType: string };
+  onCreate: () => Promise<void>;
+  onFilter: (filters: { contractorId: string; availabilityType: string }) => void;
+  onShiftChange: (shift: {
+    contractorId: string;
+    availabilityType: string;
+    availabilityDate: string;
+    startTime: string;
+    endTime: string;
+    notes: string;
+  }) => void;
+  onWithdraw: (availabilityId: string) => Promise<void>;
+}) {
+  const filtered = availability.filter((row) => {
+    if (filters.contractorId && row.contractorId !== filters.contractorId) return false;
+    if (filters.availabilityType && row.availabilityType !== filters.availabilityType) return false;
+    return true;
+  });
+
+  return (
+    <>
+      <section className="manual-lead-panel availability-panel" aria-label="Create designated shift">
+        <div className="field-grid">
+          <label className="field">
+            <span>Contractor</span>
+            <select
+              onChange={(event) => onShiftChange({ ...designatedShift, contractorId: event.target.value })}
+              value={designatedShift.contractorId}
+            >
+              <option value="">Choose contractor</option>
+              {contractors.map((contractor) => (
+                <option key={contractor.id} value={contractor.id}>{contractor.displayName}</option>
+              ))}
+            </select>
+          </label>
+          <label className="field">
+            <span>Date</span>
+            <input
+              min={todayDateValue()}
+              onChange={(event) => onShiftChange({ ...designatedShift, availabilityDate: event.target.value })}
+              type="date"
+              value={designatedShift.availabilityDate}
+            />
+          </label>
+          <label className="field">
+            <span>Start</span>
+            <input onChange={(event) => onShiftChange({ ...designatedShift, startTime: event.target.value })} type="time" value={designatedShift.startTime} />
+          </label>
+          <label className="field">
+            <span>End</span>
+            <input onChange={(event) => onShiftChange({ ...designatedShift, endTime: event.target.value })} type="time" value={designatedShift.endTime} />
+          </label>
+        </div>
+        <label className="field">
+          <span>Notes</span>
+          <textarea maxLength={500} onChange={(event) => onShiftChange({ ...designatedShift, notes: event.target.value })} value={designatedShift.notes} />
+        </label>
+        <button
+          className="button button--primary"
+          disabled={!designatedShift.contractorId || !designatedShift.availabilityDate || busyId === "owner-availability"}
+          onClick={onCreate}
+          type="button"
+        >
+          {busyId === "owner-availability" ? "Saving..." : "Add Designated Shift"}
+        </button>
+      </section>
+
+      <div className="operations-tabs availability-filters" aria-label="Availability filters">
+        <label className="field">
+          <span>Contractor</span>
+          <select onChange={(event) => onFilter({ ...filters, contractorId: event.target.value })} value={filters.contractorId}>
+            <option value="">All contractors</option>
+            {contractors.map((contractor) => (
+              <option key={contractor.id} value={contractor.id}>{contractor.displayName}</option>
+            ))}
+          </select>
+        </label>
+        <label className="field">
+          <span>Type</span>
+          <select onChange={(event) => onFilter({ ...filters, availabilityType: event.target.value })} value={filters.availabilityType}>
+            <option value="">All types</option>
+            <option value="REGULAR">Regular</option>
+            <option value="ON_CALL">On-call</option>
+            <option value="EXCEPTION">Exception</option>
+            <option value="DESIGNATED_SHIFT">Designated shift</option>
+          </select>
+        </label>
+      </div>
+
+      {filtered.length === 0 ? (
+        <div className="owner-empty">
+          <h2>No availability found.</h2>
+          <p>Contractor availability and owner-designated shifts will appear here.</p>
+        </div>
+      ) : (
+        <div className="availability-list">
+          {filtered.map((row) => (
+            <article className="availability-row" key={row.id}>
+              <div>
+                <p className="eyebrow">{row.contractorName} / {availabilityTypeLabel(row.availabilityType)} / {row.status}</p>
+                <h4>{availabilityScheduleLabel(row)}</h4>
+                <p>{row.startTime} - {row.endTime} / {row.timezone}</p>
+                {row.notes ? <p>{row.notes}</p> : null}
+              </div>
+              {row.status === "ACTIVE" ? (
+                <button className="button button--dark" disabled={Boolean(busyId)} onClick={() => onWithdraw(row.id)} type="button">
+                  {busyId === row.id ? "Withdrawing..." : "Withdraw"}
+                </button>
+              ) : null}
+            </article>
+          ))}
+        </div>
+      )}
+    </>
+  );
+}
 
 function ContractorInvitePanel({
   busy,
@@ -1153,6 +1421,24 @@ function responseLead(payload: Awaited<ReturnType<typeof readJson>>) {
   if ("details" in payload && payload.details?.lead) return payload.details.lead;
   if ("lead" in payload && payload.lead) return payload.lead;
   return null;
+}
+
+function upsertAvailability(
+  current: ContractorAvailability[],
+  updated: ContractorAvailability,
+) {
+  const exists = current.some((row) => row.id === updated.id);
+  if (exists) return current.map((row) => row.id === updated.id ? updated : row);
+  return [updated, ...current];
+}
+
+function todayDateValue() {
+  return new Intl.DateTimeFormat("en-CA", {
+    day: "2-digit",
+    month: "2-digit",
+    timeZone: "America/Los_Angeles",
+    year: "numeric",
+  }).format(new Date());
 }
 
 function friendlyError(payload: Awaited<ReturnType<typeof readJson>>) {
