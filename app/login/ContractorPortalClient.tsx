@@ -5,11 +5,13 @@ import {
   AVAILABILITY_TYPE_EXCEPTION,
   AVAILABILITY_TYPE_ON_CALL,
   AVAILABILITY_TYPE_REGULAR,
+  type ContractorAssignment,
   type ContractorAvailability,
 } from "../lib/contractors/types";
 import type { OperationsUser } from "../lib/booking/ownerAuth";
 
 type ContractorPortalClientProps = {
+  assignments: ContractorAssignment[];
   availability: ContractorAvailability[];
   databaseConfigured: boolean;
   user: OperationsUser;
@@ -45,6 +47,7 @@ const emptyAvailabilityForm: AvailabilityForm = {
 const dayNames = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 
 export function ContractorPortalClient({
+  assignments,
   availability,
   databaseConfigured,
   user,
@@ -125,10 +128,26 @@ export function ContractorPortalClient({
 
       <section className="owner-lead">
         <h3>Confirmed Assignments</h3>
-        <p className="portal-empty-copy">
-          No confirmed assignments are available yet. When Wade Home Services assigns work to you,
-          job-safe details will appear here.
-        </p>
+        {assignments.length === 0 ? (
+          <p className="portal-empty-copy">
+            No confirmed assignments are available yet. When Wade Home Services assigns work to you,
+            job-safe details will appear here.
+          </p>
+        ) : (
+          <div className="availability-list">
+            {assignments.map((assignment) => (
+              <article className="availability-row" key={assignment.assignmentId}>
+                <div>
+                  <p className="eyebrow">{assignment.status}</p>
+                  <h4>{assignment.jobName || assignment.leadId}</h4>
+                  <p>{formatAssignmentWindow(assignment.scheduledStart, assignment.scheduledEnd)}</p>
+                  <p>{[assignment.serviceTypes, assignment.city].filter(Boolean).join(" / ")}</p>
+                  {assignment.accessNotes ? <p>Access: {assignment.accessNotes}</p> : null}
+                </div>
+              </article>
+            ))}
+          </div>
+        )}
       </section>
 
       <section className="owner-lead">
@@ -377,4 +396,13 @@ function todayDateValue() {
     timeZone: "America/Los_Angeles",
     year: "numeric",
   }).format(new Date());
+}
+
+function formatAssignmentWindow(start: string, end: string) {
+  const formatter = new Intl.DateTimeFormat("en-US", {
+    dateStyle: "medium",
+    timeStyle: "short",
+    timeZone: "America/Los_Angeles",
+  });
+  return `${formatter.format(new Date(start))} - ${formatter.format(new Date(end))}`;
 }

@@ -61,21 +61,32 @@ Acceptance criteria:
 
 ## Phase 3: Assignment Model And Owner Approval
 
+Implemented direction:
+
+- Owner can review active jobs and manage crew assignments without changing the customer appointment approval flow.
+- Crew proposals are saved in the contractor database as `PROPOSED` assignments.
+- Owner approval is explicit and changes proposed assignments to `APPROVED`.
+- Rejection and cancellation are retained as assignment history.
+- Contractors see only their own approved assignments and contractor-safe job fields.
+- Withdrawing availability after crew approval flags affected assignments for owner review instead of silently canceling work.
+
 Data:
 
 - `contractor_assignments`
-- Store lead/job ID, contractor ID, scheduled start/end, status, service summary, city, access notes, and calendar sync state.
+- Store lead/job ID, contractor ID, scheduled start/end, status, service summary, city, access notes, travel buffer, required crew size, approval/cancel/reject metadata, conflict flags, and audit trail.
 
 Acceptance criteria:
 
 - Owner sets required crew size per job.
-- System can propose a crew without confirming it.
+- Owner can propose a crew without confirming it.
 - Owner can approve, edit, or reject proposed crews.
 - Approval rechecks contractor availability and existing assignments.
 - Crew approval does not resend customer confirmations or duplicate customer booking Calendar events.
 - Duplicate approval attempts do not create duplicate assignments.
+- Approved assignments are separate from actual worked hours.
+- Calendar assignment sync remains a later phase.
 
-## Phase 4: Scheduling Recommendations
+## Phase 4: Scheduling Recommendations And Calendar Sync
 
 Inputs:
 
@@ -94,6 +105,7 @@ Acceptance criteria:
 - Recommendations flag insufficient staffing.
 - Recommendations explain conflicts without exposing private customer data to contractors.
 - Owner approval is required before assignments become confirmed.
+- Assignment Calendar sync, edits, cancellations, and sync failure recovery are implemented here.
 
 ## Phase 5: Work History And Hours Approval
 
@@ -119,16 +131,12 @@ Acceptance criteria:
 - Deactivated accounts retain history.
 - Payroll/payment calculations remain out of scope.
 
-## Phase 6: Calendar Sync And Failure Recovery
+## Phase 6: Payroll-Adjacent Reporting
 
 Acceptance criteria:
 
-- Customer appointment Calendar integration continues to use the existing WHS Calendar.
-- Personal contractor Google Calendar integrations remain out of scope.
-- Assignment conflicts are rechecked before owner approval.
-- Calendar edits and cancellations are detected or reconciled.
-- Sync failures are recorded and recoverable.
-- Existing booking event duplicate prevention remains intact.
+- Export approved hours and assignment summaries for owner review.
+- Do not calculate payroll or payments in the application.
 
 ## Setup Requirements
 

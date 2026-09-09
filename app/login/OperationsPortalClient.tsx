@@ -14,8 +14,15 @@ import {
 } from "../lib/booking/config";
 import { ROLE_OWNER, type OperationsUser } from "../lib/booking/ownerAuth";
 import {
+  ASSIGNMENT_STATUS_APPROVED,
+  ASSIGNMENT_STATUS_CANCELED,
+  ASSIGNMENT_STATUS_CONFLICT_REVIEW,
+  ASSIGNMENT_STATUS_PROPOSED,
+  ASSIGNMENT_STATUS_REJECTED,
   AVAILABILITY_TYPE_DESIGNATED_SHIFT,
+  type AssignmentCandidate,
   type ContractorAccount,
+  type ContractorAssignment,
   type ContractorAvailability,
 } from "../lib/contractors/types";
 import {
@@ -26,6 +33,8 @@ import type { OwnerDecisionResult, SheetLead } from "../lib/booking/types";
 
 type OperationsPortalClientProps = {
   activeJobs: SheetLead[];
+  assignments: ContractorAssignment[];
+  assignmentCandidates: Record<string, AssignmentCandidate[]>;
   availability: ContractorAvailability[];
   contractorDbConfigured: boolean;
   contractors: ContractorAccount[];
@@ -77,6 +86,8 @@ const emptyManualLead: ManualLeadForm = {
 
 export function OperationsPortalClient({
   activeJobs,
+  assignments,
+  assignmentCandidates,
   availability,
   contractorDbConfigured,
   contractors,
@@ -92,6 +103,7 @@ export function OperationsPortalClient({
   const [showLeadForm, setShowLeadForm] = useState(false);
   const [manualLead, setManualLead] = useState<ManualLeadForm>(emptyManualLead);
   const [contractorAccounts, setContractorAccounts] = useState(contractors);
+  const [assignmentRows, setAssignmentRows] = useState(assignments);
   const [availabilityRows, setAvailabilityRows] = useState(availability);
   const [availabilityFilter, setAvailabilityFilter] = useState({ contractorId: "", availabilityType: "" });
   const [designatedShift, setDesignatedShift] = useState({
@@ -306,6 +318,52 @@ export function OperationsPortalClient({
       setNotice({ tone: "success", message: "Availability withdrawn." });
     } catch {
       setNotice({ tone: "error", message: "Availability could not be withdrawn." });
+    } finally {
+      setBusyAction(null);
+    }
+  }
+
+  async function updateCrewAssignment(
+    lead: SheetLead,
+    action: "propose" | "approve" | "reject" | "cancel",
+    values: {
+      contractorIds?: string[];
+      requiredCrewSize?: string;
+      travelBufferMinutes?: string;
+      travelBufferOverride?: boolean;
+      note?: string;
+    },
+  ) {
+    setNotice(null);
+    setBusyAction({ leadId: lead.leadId, action: `crew-${action}` });
+    try {
+      const response = await fetch("/api/owner/assignments", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action,
+          leadId: lead.leadId,
+          contractorIds: values.contractorIds ?? [],
+          requiredCrewSize: Number(values.requiredCrewSize || 1),
+          travelBufferMinutes: Number(values.travelBufferMinutes || 30),
+          travelBufferOverride: Boolean(values.travelBufferOverride),
+          note: values.note ?? "",
+        }),
+        credentials: "same-origin",
+      });
+      const payload = await readJson(response) as AssignmentResult | null;
+      if (payload?.assignments) {
+        setAssignmentRows((current) =>
+          replaceLeadAssignments(current, lead.leadId, payload.assignments ?? []),
+        );
+      }
+      if (!response.ok || !payload?.ok) {
+        setNotice({ tone: "error", message: friendlyError(payload) });
+        return;
+      }
+      setNotice({ tone: "success", message: crewActionSuccess(action) });
+    } catch {
+      setNotice({ tone: "error", message: "Crew assignment could not be updated." });
     } finally {
       setBusyAction(null);
     }
@@ -556,9 +614,15 @@ export function OperationsPortalClient({
         ) : null}
         {jobLeads.map((lead) => (
           <JobCard
+            assignments={assignmentRows.filter((assignment) => assignment.leadId === lead.leadId)}
             busyAction={busyAction}
+            candidates={assignmentCandidates[lead.leadId] ?? []}
+            contractorDbConfigured={contractorDbConfigured}
+            contractors={contractorAccounts}
+            isOwner={isOwner}
             key={lead.leadId}
             lead={lead}
+            onCrewUpdate={updateCrewAssignment}
             onMutate={mutateJob}
           />
         ))}
@@ -689,6 +753,14 @@ type AvailabilityResult = {
   ok: boolean;
   message?: string;
   availability?: ContractorAvailability;
+};
+
+type AssignmentResult = {
+  ok: boolean;
+  message?: string;
+  assignments?: ContractorAssignment[];
+  candidates?: AssignmentCandidate[];
+  travelBufferMinutes?: number;
 };
 
 function OwnerAvailabilityPanel({
@@ -1256,12 +1328,34 @@ function RequestCard({
 }
 
 function JobCard({
+  assignments,
   busyAction,
+  candidates,
+  contractorDbConfigured,
+  contractors,
+  isOwner,
   lead,
+  onCrewUpdate,
   onMutate,
 }: {
+  assignments: ContractorAssignment[];
   busyAction: BusyAction;
+  candidates: AssignmentCandidate[];
+  contractorDbConfigured: boolean;
+  contractors: ContractorAccount[];
+  isOwner: boolean;
   lead: SheetLead;
+  onCrewUpdate: (
+    lead: SheetLead,
+    action: "propose" | "approve" | "reject" | "cancel",
+    values: {
+      contractorIds?: string[];
+      requiredCrewSize?: string;
+      travelBufferMinutes?: string;
+      travelBufferOverride?: boolean;
+      note?: string;
+    },
+  ) => Promise<void>;
   onMutate: (leadId: string, action: "status" | "complete", values: Record<string, string>) => Promise<void>;
 }) {
   const [status, setStatus] = useState(lead.status === IN_PROGRESS_STATUS ? IN_PROGRESS_STATUS : APPROVED_STATUS);
@@ -1358,7 +1452,207 @@ function JobCard({
           </div>
         </div>
       )}
+
+      {isOwner ? (
+        <CrewAssignmentPanel
+          assignments={assignments}
+          busyAction={busyAction}
+          contractorDbConfigured={contractorDbConfigured}
+          contractors={contractors}
+          candidates={candidates}
+          lead={lead}
+          onCrewUpdate={onCrewUpdate}
+        />
+      ) : null}
     </article>
+  );
+}
+
+function CrewAssignmentPanel({
+  assignments,
+  busyAction,
+  candidates,
+  contractorDbConfigured,
+  contractors,
+  lead,
+  onCrewUpdate,
+}: {
+  assignments: ContractorAssignment[];
+  busyAction: BusyAction;
+  candidates: AssignmentCandidate[];
+  contractorDbConfigured: boolean;
+  contractors: ContractorAccount[];
+  lead: SheetLead;
+  onCrewUpdate: (
+    lead: SheetLead,
+    action: "propose" | "approve" | "reject" | "cancel",
+    values: {
+      contractorIds?: string[];
+      requiredCrewSize?: string;
+      travelBufferMinutes?: string;
+      travelBufferOverride?: boolean;
+      note?: string;
+    },
+  ) => Promise<void>;
+}) {
+  const [requiredCrewSize, setRequiredCrewSize] = useState(String(assignments[0]?.requiredCrewSize || 1));
+  const [travelBufferMinutes, setTravelBufferMinutes] = useState(String(assignments[0]?.travelBufferMinutes || 30));
+  const [travelBufferOverride, setTravelBufferOverride] = useState(Boolean(assignments[0]?.travelBufferOverride));
+  const [selectedContractors, setSelectedContractors] = useState(
+    assignments
+      .filter((assignment) => [ASSIGNMENT_STATUS_PROPOSED, ASSIGNMENT_STATUS_APPROVED, ASSIGNMENT_STATUS_CONFLICT_REVIEW].includes(assignment.status))
+      .map((assignment) => assignment.contractorId),
+  );
+  const [note, setNote] = useState("");
+  const isBusy = busyAction !== null;
+  const proposed = assignments.filter((assignment) => assignment.status === ASSIGNMENT_STATUS_PROPOSED);
+  const approved = assignments.filter((assignment) =>
+    [ASSIGNMENT_STATUS_APPROVED, ASSIGNMENT_STATUS_CONFLICT_REVIEW].includes(assignment.status),
+  );
+  const inactive = assignments.filter((assignment) =>
+    [ASSIGNMENT_STATUS_REJECTED, ASSIGNMENT_STATUS_CANCELED].includes(assignment.status),
+  );
+  const selectedCount = selectedContractors.length;
+  const crewShort = selectedCount < Number(requiredCrewSize || 1);
+
+  function toggleContractor(contractorId: string) {
+    setSelectedContractors((current) =>
+      current.includes(contractorId)
+        ? current.filter((id) => id !== contractorId)
+        : [...current, contractorId],
+    );
+  }
+
+  if (!contractorDbConfigured) {
+    return (
+      <section className="manual-lead-panel assignment-panel">
+        <h3>Crew Assignments</h3>
+        <p className="portal-empty-copy">Configure CONTRACTOR_DATABASE_URL before crew proposals can be saved.</p>
+      </section>
+    );
+  }
+
+  return (
+    <section className="manual-lead-panel assignment-panel" aria-label={`Crew assignments for ${lead.leadId}`}>
+      <div className="operations-section__header">
+        <div>
+          <h3>Crew Assignments</h3>
+          <p>Save a crew proposal first. Approval rechecks availability and conflicts before contractors see the job.</p>
+        </div>
+      </div>
+      <dl className="owner-status-detail">
+        <div><dt>Required Crew</dt><dd>{requiredCrewSize}</dd></div>
+        <div><dt>Selected</dt><dd>{selectedCount}</dd></div>
+        <div><dt>Travel Buffer</dt><dd>{travelBufferMinutes} minutes{travelBufferOverride ? " / override" : ""}</dd></div>
+        <div><dt>Schedule</dt><dd>{assignmentWindowLabel(lead)}</dd></div>
+      </dl>
+      {crewShort ? (
+        <p className="owner-inline-error">Selected crew is below the required crew size.</p>
+      ) : null}
+      <div className="field-grid">
+        <label className="field">
+          <span>Required crew size</span>
+          <input disabled={isBusy} min="1" onChange={(event) => setRequiredCrewSize(event.target.value)} type="number" value={requiredCrewSize} />
+        </label>
+        <label className="field">
+          <span>Travel buffer minutes</span>
+          <input disabled={isBusy} min="0" onChange={(event) => {
+            setTravelBufferMinutes(event.target.value);
+            setTravelBufferOverride(true);
+          }} type="number" value={travelBufferMinutes} />
+        </label>
+      </div>
+      <label className="field">
+        <span>Proposal note</span>
+        <textarea disabled={isBusy} maxLength={500} onChange={(event) => setNote(event.target.value)} value={note} />
+      </label>
+      <div className="availability-list">
+        {contractors.length === 0 ? (
+          <div className="owner-empty">
+            <h2>No contractor accounts yet.</h2>
+            <p>Create contractor accounts before assigning crews.</p>
+          </div>
+        ) : contractors.map((contractor) => {
+          const candidate = candidates.find((item) => item.contractorId === contractor.id);
+          return (
+          <label className="availability-row assignment-choice" key={contractor.id}>
+            <input
+              checked={selectedContractors.includes(contractor.id)}
+              disabled={isBusy || contractor.status !== "ACTIVE"}
+              onChange={() => toggleContractor(contractor.id)}
+              type="checkbox"
+            />
+            <span>
+              <strong>{contractor.displayName}</strong>
+              <small>{candidateLabel(candidate, contractor.status)}</small>
+              {candidate?.conflictReason ? <small>{candidate.conflictReason}</small> : null}
+            </span>
+          </label>
+          );
+        })}
+      </div>
+      <div className="owner-actions owner-actions--compact">
+        <button
+          className="button button--ghost"
+          disabled={isBusy || selectedContractors.length === 0}
+          onClick={() => onCrewUpdate(lead, "propose", { contractorIds: selectedContractors, requiredCrewSize, travelBufferMinutes, travelBufferOverride, note })}
+          type="button"
+        >
+          {busyAction?.leadId === lead.leadId && busyAction.action === "crew-propose" ? "Saving..." : "Save Proposal"}
+        </button>
+        <button
+          className="button button--primary"
+          disabled={isBusy || proposed.length === 0 || crewShort}
+          onClick={() => onCrewUpdate(lead, "approve", { contractorIds: selectedContractors, requiredCrewSize, travelBufferMinutes, travelBufferOverride, note })}
+          type="button"
+        >
+          {busyAction?.leadId === lead.leadId && busyAction.action === "crew-approve" ? "Approving..." : "Approve Crew"}
+        </button>
+        <button
+          className="button button--dark"
+          disabled={isBusy || proposed.length === 0}
+          onClick={() => onCrewUpdate(lead, "reject", {})}
+          type="button"
+        >
+          Reject Proposal
+        </button>
+        <button
+          className="button button--ghost"
+          disabled={isBusy || approved.length === 0}
+          onClick={() => onCrewUpdate(lead, "cancel", {})}
+          type="button"
+        >
+          Cancel Approved Crew
+        </button>
+      </div>
+      <AssignmentStatusList title="Current Crew" assignments={[...approved, ...proposed]} />
+      <AssignmentStatusList title="Past Crew Decisions" assignments={inactive} />
+    </section>
+  );
+}
+
+function AssignmentStatusList({
+  assignments,
+  title,
+}: {
+  assignments: ContractorAssignment[];
+  title: string;
+}) {
+  if (assignments.length === 0) return null;
+  return (
+    <div className="availability-list assignment-status-list">
+      <h4>{title}</h4>
+      {assignments.map((assignment) => (
+        <article className="availability-row" key={assignment.assignmentId}>
+          <div>
+            <p className="eyebrow">{assignment.status}</p>
+            <h4>{assignment.contractorName}</h4>
+            <p>{assignment.serviceTypes || "Service details hidden"}</p>
+            {assignment.conflictReason ? <p className="owner-inline-error">{assignment.conflictReason}</p> : null}
+          </div>
+        </article>
+      ))}
+    </div>
   );
 }
 
@@ -1430,6 +1724,42 @@ function upsertAvailability(
   const exists = current.some((row) => row.id === updated.id);
   if (exists) return current.map((row) => row.id === updated.id ? updated : row);
   return [updated, ...current];
+}
+
+function replaceLeadAssignments(
+  current: ContractorAssignment[],
+  leadId: string,
+  updated: ContractorAssignment[],
+) {
+  return [
+    ...updated,
+    ...current.filter((assignment) => assignment.leadId !== leadId),
+  ];
+}
+
+function crewActionSuccess(action: "propose" | "approve" | "reject" | "cancel") {
+  if (action === "approve") return "Crew assignment approved.";
+  if (action === "reject") return "Crew proposal rejected.";
+  if (action === "cancel") return "Crew assignment canceled.";
+  return "Crew proposal saved.";
+}
+
+function assignmentWindowLabel(lead: SheetLead) {
+  return [
+    lead.confirmedDate || lead.requestedDate || "Date not set",
+    lead.confirmedTime || lead.requestedTime || "Time not set",
+  ].join(" / ");
+}
+
+function candidateLabel(candidate: AssignmentCandidate | undefined, accountStatus: string) {
+  if (accountStatus !== "ACTIVE") return accountStatus;
+  if (!candidate) return "Availability not evaluated";
+  if (candidate.conflict) return "Conflict";
+  if (candidate.onCall) return "On-call available";
+  if (candidate.availabilityType === "DESIGNATED_SHIFT") return "Designated shift";
+  if (candidate.availabilityType === "EXCEPTION") return "Date-specific availability";
+  if (candidate.availabilityType === "REGULAR") return "Regular availability";
+  return "No matching availability";
 }
 
 function todayDateValue() {

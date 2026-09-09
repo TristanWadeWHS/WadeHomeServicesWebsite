@@ -59,6 +59,10 @@ import {
   contractorDatabaseConfigured,
 } from "../app/lib/contractors/database.ts";
 import {
+  assignmentInputFromLead,
+  localDateTimeLabelToIso,
+} from "../app/lib/contractors/assignmentSchedule.ts";
+import {
   hashContractorPassword,
   passwordMeetsContractorPolicy,
   verifyContractorPassword,
@@ -497,6 +501,74 @@ test("contractor migration is explicit and includes future operations tables", (
   assert.equal(availabilityMigration.includes("ADD COLUMN IF NOT EXISTS withdrawn_at"), true);
   assert.equal(runner.includes("CONTRACTOR_DATABASE_URL"), true);
   assert.equal(runner.includes("migrationFiles"), true);
+});
+
+test("crew assignment approval workflow is owner-only and database-backed", () => {
+  const ownerRoute = readFileSync("app/api/owner/assignments/route.ts", "utf8");
+  const contractorRoute = readFileSync("app/api/contractor/assignments/route.ts", "utf8");
+  const dbSource = readFileSync("app/lib/contractors/database.ts", "utf8");
+  const uiSource = readFileSync("app/login/OperationsPortalClient.tsx", "utf8");
+  const contractorUi = readFileSync("app/login/ContractorPortalClient.tsx", "utf8");
+  const migration = readFileSync("db/migrations/003_contractor_assignment_approval.sql", "utf8");
+
+  assert.equal(ownerRoute.includes("requireRole(request, ROLE_OWNER)"), true);
+  assert.equal(ownerRoute.includes("getLeadById"), true);
+  assert.equal(ownerRoute.includes("saveAssignmentProposal"), true);
+  assert.equal(ownerRoute.includes("approveAssignmentProposal"), true);
+  assert.equal(ownerRoute.includes("rejectAssignmentProposal"), true);
+  assert.equal(ownerRoute.includes("cancelApprovedAssignments"), true);
+  assert.equal(ownerRoute.includes("createCalendarEvent"), false);
+  assert.equal(ownerRoute.includes("sendCustomerApprovalConfirmation"), false);
+  assert.equal(contractorRoute.includes("requireAnyRoleAsync(request, [ROLE_CONTRACTOR])"), true);
+  assert.equal(contractorRoute.includes("listApprovedAssignmentsForContractor"), true);
+
+  assert.equal(dbSource.includes("ASSIGNMENT_STATUS_PROPOSED"), true);
+  assert.equal(dbSource.includes("ASSIGNMENT_STATUS_APPROVED"), true);
+  assert.equal(dbSource.includes("ASSIGNMENT_STATUS_CONFLICT_REVIEW"), true);
+  assert.equal(dbSource.includes("One or more proposed contractors are inactive."), true);
+  assert.equal(dbSource.includes("Already assigned to overlapping approved work."), true);
+  assert.equal(dbSource.includes("Availability was withdrawn after assignment approval."), true);
+  assert.equal(dbSource.includes("UNIQUE (lead_id, contractor_id)"), true);
+  assert.equal(dbSource.includes("ON CONFLICT (lead_id, contractor_id)"), true);
+
+  assert.equal(uiSource.includes("Crew Assignments"), true);
+  assert.equal(uiSource.includes("Required crew size"), true);
+  assert.equal(uiSource.includes("Travel buffer minutes"), true);
+  assert.equal(uiSource.includes("Save Proposal"), true);
+  assert.equal(uiSource.includes("Approve Crew"), true);
+  assert.equal(uiSource.includes("Reject Proposal"), true);
+  assert.equal(uiSource.includes("Cancel Approved Crew"), true);
+  assert.equal(uiSource.includes("candidateLabel"), true);
+  assert.equal(contractorUi.includes("Confirmed Assignments"), true);
+  assert.equal(contractorUi.includes("formatAssignmentWindow"), true);
+
+  assert.equal(migration.includes("required_crew_size"), true);
+  assert.equal(migration.includes("travel_buffer_minutes"), true);
+  assert.equal(migration.includes("approved_at"), true);
+  assert.equal(migration.includes("conflict_flagged_at"), true);
+  assert.equal(migration.includes("contractor_assignments_lead_status_idx"), true);
+});
+
+test("crew assignment schedule parsing uses the business timezone including daylight saving", () => {
+  process.env.BOOKING_TIMEZONE = "America/Los_Angeles";
+  process.env.BOOKING_APPOINTMENT_MINUTES = "120";
+  const summer = localDateTimeLabelToIso("2026-07-15", "Wed, Jul 15, 9:00 AM");
+  const winter = localDateTimeLabelToIso("2026-12-15", "Tue, Dec 15, 9:00 AM");
+  assert.equal(summer, "2026-07-15T16:00:00.000Z");
+  assert.equal(winter, "2026-12-15T17:00:00.000Z");
+
+  const input = assignmentInputFromLead(sheetLeadFixture({
+    leadId: "WHS-20260715-CREW01",
+    name: "Crew Test",
+    requestedDate: "2026-07-15",
+    requestedTime: "Wed, Jul 15, 9:00 AM",
+    confirmedDate: "",
+    confirmedTime: "",
+  }), { requiredCrewSize: 2, contractorIds: ["ctr_a"], travelBufferMinutes: 45 });
+  assert.equal(input?.scheduledStart, "2026-07-15T16:00:00.000Z");
+  assert.equal(input?.scheduledEnd, "2026-07-15T18:00:00.000Z");
+  assert.equal(input?.requiredCrewSize, 2);
+  assert.equal(input?.travelBufferMinutes, 45);
 });
 
 test("manual lead conversion and decline are owner-only persisted transitions", () => {

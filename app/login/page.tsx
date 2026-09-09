@@ -14,11 +14,15 @@ import {
   type OperationsUser,
 } from "../lib/booking/ownerAuth";
 import {
+  getAssignmentCandidates,
   contractorDatabaseConfigured,
   listAllContractorAvailability,
+  listApprovedAssignmentsForContractor,
+  listAssignmentsForOwner,
   listAvailabilityForContractor,
   listContractorAccounts,
 } from "../lib/contractors/database";
+import { assignmentInputFromLead } from "../lib/contractors/assignmentSchedule";
 import { OperationsPortalClient } from "./OperationsPortalClient";
 import { ContractorPortalClient } from "./ContractorPortalClient";
 
@@ -36,9 +40,28 @@ export default async function LoginPage() {
     user?.role === ROLE_OWNER && contractorDatabaseConfigured()
       ? await listAllContractorAvailability()
       : [];
+  const ownerAssignments =
+    user?.role === ROLE_OWNER && contractorDatabaseConfigured()
+      ? await listAssignmentsForOwner()
+      : [];
+  const ownerAssignmentCandidates =
+    user?.role === ROLE_OWNER && contractorDatabaseConfigured()
+      ? Object.fromEntries(
+          await Promise.all(
+            activeJobs.map(async (lead) => {
+              const input = assignmentInputFromLead(lead);
+              return [lead.leadId, input ? await getAssignmentCandidates(input) : []];
+            }),
+          ),
+        )
+      : {};
   const contractorAvailability =
     user?.role === ROLE_CONTRACTOR && user.id && contractorDatabaseConfigured()
       ? await listAvailabilityForContractor(user.id)
+      : [];
+  const contractorAssignments =
+    user?.role === ROLE_CONTRACTOR && user.id && contractorDatabaseConfigured()
+      ? await listApprovedAssignmentsForContractor(user.id)
       : [];
   const contractorDbConfigured = contractorDatabaseConfigured();
 
@@ -79,6 +102,7 @@ export default async function LoginPage() {
 
         {user?.role === ROLE_CONTRACTOR ? (
           <ContractorPortalClient
+            assignments={contractorAssignments}
             availability={contractorAvailability}
             databaseConfigured={contractorDbConfigured}
             user={user}
@@ -88,6 +112,8 @@ export default async function LoginPage() {
         {user && user.role !== ROLE_CONTRACTOR ? (
           <OperationsPortalClient
             activeJobs={activeJobs}
+            assignments={ownerAssignments}
+            assignmentCandidates={ownerAssignmentCandidates}
             availability={allAvailability}
             contractors={contractors}
             contractorDbConfigured={contractorDbConfigured}
