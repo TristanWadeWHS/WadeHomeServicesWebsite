@@ -549,7 +549,8 @@ test("crew assignment approval workflow is owner-only and database-backed", () =
   assert.equal(uiSource.includes("Reject Proposal"), true);
   assert.equal(uiSource.includes("Cancel Approved Crew"), true);
   assert.equal(uiSource.includes("selectedHasConflict"), true);
-  assert.equal(uiSource.includes("Resolve crew availability conflicts before saving or approving."), true);
+  assert.equal(uiSource.includes("This crew has a cached availability warning. Save or approve to recheck against the current schedule."), true);
+  assert.equal(uiSource.includes("disabled={isBusy || scheduleMissing || selectedContractors.length === 0}"), true);
   assert.equal(uiSource.includes("availabilityNeedsRecheck"), true);
   assert.equal(uiSource.includes("Availability will be rechecked against the current schedule when you save or approve."), true);
   assert.equal(uiSource.includes("candidateLabel"), true);

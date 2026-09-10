@@ -1599,7 +1599,7 @@ function CrewAssignmentPanel({
       ) : null}
       {selectedHasConflict ? (
         <div className="owner-inline-error" role="alert">
-          <p>Resolve crew availability conflicts before saving or approving.</p>
+          <p>This crew has a cached availability warning. Save or approve to recheck against the current schedule.</p>
           <ul>
             {selectedCandidateIssues.map((issue) => <li key={issue}>{issue}</li>)}
           </ul>
@@ -1675,7 +1675,7 @@ function CrewAssignmentPanel({
       <div className="owner-actions owner-actions--compact">
         <button
           className="button button--ghost"
-          disabled={isBusy || scheduleMissing || selectedHasConflict || selectedContractors.length === 0}
+          disabled={isBusy || scheduleMissing || selectedContractors.length === 0}
           onClick={() => handleCrewUpdate("propose")}
           type="button"
         >
@@ -1683,7 +1683,7 @@ function CrewAssignmentPanel({
         </button>
         <button
           className="button button--primary"
-          disabled={isBusy || scheduleMissing || selectedHasConflict || selectedContractors.length === 0 || crewShort}
+          disabled={isBusy || scheduleMissing || selectedContractors.length === 0 || crewShort}
           onClick={() => handleCrewUpdate("approve")}
           type="button"
         >
