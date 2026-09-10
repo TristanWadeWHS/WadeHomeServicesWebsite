@@ -300,7 +300,7 @@ export async function listApprovedAssignmentsForContractor(contractorId: string)
     FROM contractor_assignments ca
     JOIN contractor_accounts c ON c.id = ca.contractor_id
     WHERE ca.contractor_id = ${contractorId}
-      AND ca.status IN (${ASSIGNMENT_STATUS_APPROVED}, ${ASSIGNMENT_STATUS_CONFLICT_REVIEW})
+      AND ca.status = ${ASSIGNMENT_STATUS_APPROVED}
     ORDER BY ca.scheduled_start ASC
   ` as ContractorAssignmentRow[];
   return rows.map(rowToAssignment);
@@ -341,6 +341,17 @@ export async function saveAssignmentProposal(
 
   const sql = contractorSql();
   const now = new Date().toISOString();
+  await sql`
+    UPDATE contractor_assignments
+    SET status = ${ASSIGNMENT_STATUS_CANCELED},
+        canceled_at = ${now},
+        canceled_by = ${actor},
+        audit_trail = audit_trail || ${assignmentAudit("", `${actor} removed contractor from crew proposal.`, now)},
+        updated_at = now()
+    WHERE lead_id = ${validation.value.leadId}
+      AND status IN (${ASSIGNMENT_STATUS_PROPOSED}, ${ASSIGNMENT_STATUS_APPROVED}, ${ASSIGNMENT_STATUS_CONFLICT_REVIEW})
+      AND NOT (contractor_id = ANY(${validation.value.contractorIds}::text[]))
+  `;
   for (const contractorId of validation.value.contractorIds) {
     const id = `asg_${randomUUID()}`;
     await sql`
@@ -419,12 +430,42 @@ export async function approveAssignmentProposal(
 
   const sql = contractorSql();
   const now = new Date().toISOString();
-  await sql`
+  const updated = await sql`
     UPDATE contractor_assignments
     SET status = ${ASSIGNMENT_STATUS_APPROVED},
         approved_at = COALESCE(approved_at, ${now}),
         approved_by = CASE WHEN approved_by = '' THEN ${actor} ELSE approved_by END,
         audit_trail = audit_trail || ${assignmentAudit("", `${actor} approved crew assignment.`, now)},
+        updated_at = now()
+    WHERE lead_id = ${validation.value.leadId}
+      AND status = ${ASSIGNMENT_STATUS_PROPOSED}
+      AND NOT EXISTS (
+        SELECT 1
+        FROM contractor_assignments overlapping
+        WHERE overlapping.contractor_id = contractor_assignments.contractor_id
+          AND overlapping.lead_id != contractor_assignments.lead_id
+          AND overlapping.status IN (${ASSIGNMENT_STATUS_APPROVED}, ${ASSIGNMENT_STATUS_CONFLICT_REVIEW})
+          AND overlapping.scheduled_start < ${new Date(validation.value.scheduledEnd).toISOString()}
+          AND overlapping.scheduled_end > ${new Date(validation.value.scheduledStart).toISOString()}
+      )
+    RETURNING id
+  ` as { id: string }[];
+  if (updated.length !== proposed.length) {
+    const assignments = await listAssignmentsForOwner(validation.value.leadId);
+    return {
+      ok: false,
+      status: 409,
+      message: "Crew approval could not be completed because one or more contractors now has a conflicting assignment.",
+      assignments,
+      candidates: await evaluateAssignmentCandidates(proposalForApproval),
+    };
+  }
+  await sql`
+    UPDATE contractor_assignments
+    SET status = ${ASSIGNMENT_STATUS_CANCELED},
+        canceled_at = ${now},
+        canceled_by = ${actor},
+        audit_trail = audit_trail || ${assignmentAudit("", `${actor} canceled stale crew proposal after approval.`, now)},
         updated_at = now()
     WHERE lead_id = ${validation.value.leadId}
       AND status = ${ASSIGNMENT_STATUS_PROPOSED}

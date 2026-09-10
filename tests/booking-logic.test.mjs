@@ -529,8 +529,11 @@ test("crew assignment approval workflow is owner-only and database-backed", () =
   assert.equal(dbSource.includes("One or more proposed contractors are inactive."), true);
   assert.equal(dbSource.includes("Already assigned to overlapping approved work."), true);
   assert.equal(dbSource.includes("Availability was withdrawn after assignment approval."), true);
+  assert.equal(dbSource.includes("removed contractor from crew proposal"), true);
+  assert.equal(dbSource.includes("Crew approval could not be completed because one or more contractors now has a conflicting assignment."), true);
   assert.equal(dbSource.includes("UNIQUE (lead_id, contractor_id)"), true);
   assert.equal(dbSource.includes("ON CONFLICT (lead_id, contractor_id)"), true);
+  assert.equal(dbSource.includes("ca.status = ${ASSIGNMENT_STATUS_APPROVED}"), true);
 
   assert.equal(uiSource.includes("Crew Assignments"), true);
   assert.equal(uiSource.includes("Required crew size"), true);
@@ -543,6 +546,8 @@ test("crew assignment approval workflow is owner-only and database-backed", () =
   assert.equal(uiSource.includes("Approve Crew"), true);
   assert.equal(uiSource.includes("Reject Proposal"), true);
   assert.equal(uiSource.includes("Cancel Approved Crew"), true);
+  assert.equal(uiSource.includes("selectedHasConflict"), true);
+  assert.equal(uiSource.includes("Resolve crew availability conflicts before saving or approving."), true);
   assert.equal(uiSource.includes("candidateLabel"), true);
   assert.equal(contractorUi.includes("Confirmed Assignments"), true);
   assert.equal(contractorUi.includes("formatAssignmentWindow"), true);

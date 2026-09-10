@@ -61,6 +61,8 @@ Acceptance criteria:
 
 ## Phase 3: Assignment Model And Owner Approval
 
+Status: implementation complete on the isolated contractor portal branch; Preview owner/contractor UI review is required before any production release.
+
 Implemented direction:
 
 - Owner can review active jobs and manage crew assignments without changing the customer appointment approval flow.
@@ -69,6 +71,8 @@ Implemented direction:
 - Rejection and cancellation are retained as assignment history.
 - Contractors see only their own approved assignments and contractor-safe job fields.
 - Withdrawing availability after crew approval flags affected assignments for owner review instead of silently canceling work.
+- Edited crew proposals cancel removed crew rows and require renewed owner approval for material crew or schedule changes.
+- Approval performs a final conflict guard against overlapping approved assignments before rows are confirmed.
 
 Data:
 
@@ -85,6 +89,12 @@ Acceptance criteria:
 - Duplicate approval attempts do not create duplicate assignments.
 - Approved assignments are separate from actual worked hours.
 - Calendar assignment sync remains a later phase.
+- Assignments flagged for conflict review remain owner-visible and are hidden from contractor confirmed schedules until resolved.
+
+Deferred operations fixes after this phase:
+
+- Converted leads should leave the Leads view while preserving records and history.
+- Active jobs need editing for business fields, including missing addresses after conversion.
 
 ## Phase 4: Scheduling Recommendations And Calendar Sync
 
