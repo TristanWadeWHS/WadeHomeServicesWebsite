@@ -46,7 +46,7 @@ type ContractorAvailabilityRow = {
   contractor_name: string | null;
   availability_type: string;
   day_of_week: number | null;
-  availability_date: string | null;
+  availability_date: Date | string | null;
   start_time: string;
   end_time: string;
   timezone: string;
@@ -807,7 +807,7 @@ function rowToAvailability(row: ContractorAvailabilityRow): ContractorAvailabili
       ? row.availability_type
       : AVAILABILITY_TYPE_REGULAR,
     dayOfWeek: row.day_of_week,
-    availabilityDate: row.availability_date ? String(row.availability_date).slice(0, 10) : null,
+    availabilityDate: databaseDateValue(row.availability_date),
     startTime: row.start_time,
     endTime: row.end_time,
     timezone: row.timezone,
@@ -1187,12 +1187,23 @@ function normalizeDate(value: string | null) {
 }
 
 function localDateValue(date: Date) {
-  return new Intl.DateTimeFormat("en-CA", {
+  const parts = new Intl.DateTimeFormat("en-US", {
     day: "2-digit",
     month: "2-digit",
     timeZone: "America/Los_Angeles",
     year: "numeric",
-  }).format(date);
+  }).formatToParts(date);
+  const map = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  return `${map.year}-${map.month}-${map.day}`;
+}
+
+function databaseDateValue(value: Date | string | null) {
+  if (!value) return null;
+  if (value instanceof Date) return value.toISOString().slice(0, 10);
+  const trimmed = value.trim();
+  if (/^\d{4}-\d{2}-\d{2}/.test(trimmed)) return trimmed.slice(0, 10);
+  const parsed = new Date(trimmed);
+  return Number.isFinite(parsed.getTime()) ? parsed.toISOString().slice(0, 10) : null;
 }
 
 function sanitizeOptional(value: string, maxLength: number) {

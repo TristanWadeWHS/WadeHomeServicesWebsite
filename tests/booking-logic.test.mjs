@@ -531,6 +531,8 @@ test("crew assignment approval workflow is owner-only and database-backed", () =
   assert.equal(dbSource.includes("Availability was withdrawn after assignment approval."), true);
   assert.equal(dbSource.includes("removed contractor from crew proposal"), true);
   assert.equal(dbSource.includes("Crew approval could not be completed because one or more contractors now has a conflicting assignment."), true);
+  assert.equal(dbSource.includes("databaseDateValue(row.availability_date)"), true);
+  assert.equal(dbSource.includes("formatToParts(date)"), true);
   assert.equal(dbSource.includes("UNIQUE (lead_id, contractor_id)"), true);
   assert.equal(dbSource.includes("ON CONFLICT (lead_id, contractor_id)"), true);
   assert.equal(dbSource.includes("ca.status = ${ASSIGNMENT_STATUS_APPROVED}"), true);
