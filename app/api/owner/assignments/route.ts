@@ -53,6 +53,9 @@ export async function POST(request: Request) {
     leadId?: unknown;
     contractorIds?: unknown;
     requiredCrewSize?: unknown;
+    assignmentDate?: unknown;
+    assignmentStartTime?: unknown;
+    assignmentEndTime?: unknown;
     travelBufferMinutes?: unknown;
     travelBufferOverride?: unknown;
     note?: unknown;
@@ -81,11 +84,24 @@ export async function POST(request: Request) {
     const input = assignmentInputFromLead(lead, {
       contractorIds,
       requiredCrewSize: Number(data.requiredCrewSize ?? 1),
+      assignmentDate: String(data.assignmentDate ?? ""),
+      assignmentStartTime: String(data.assignmentStartTime ?? ""),
+      assignmentEndTime: String(data.assignmentEndTime ?? ""),
       travelBufferMinutes: Number(data.travelBufferMinutes ?? undefined),
       travelBufferOverride: Boolean(data.travelBufferOverride),
       note: String(data.note ?? ""),
     });
     if (!input) return jsonError("Job time could not be read.", 400);
+
+    const proposalResult = action === "approve" && contractorIds.length > 0
+      ? await saveAssignmentProposal(input, authorization.user.label)
+      : null;
+    if (proposalResult && !proposalResult.ok) {
+      return Response.json(
+        { ok: false, message: proposalResult.message, candidates: proposalResult.candidates },
+        { status: proposalResult.status },
+      );
+    }
 
     const result = action === "approve"
       ? await approveAssignmentProposal(input, authorization.user.label)

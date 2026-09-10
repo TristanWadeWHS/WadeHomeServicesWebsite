@@ -104,6 +104,7 @@ export function OperationsPortalClient({
   const [manualLead, setManualLead] = useState<ManualLeadForm>(emptyManualLead);
   const [contractorAccounts, setContractorAccounts] = useState(contractors);
   const [assignmentRows, setAssignmentRows] = useState(assignments);
+  const [assignmentCandidateRows, setAssignmentCandidateRows] = useState(assignmentCandidates);
   const [availabilityRows, setAvailabilityRows] = useState(availability);
   const [availabilityFilter, setAvailabilityFilter] = useState({ contractorId: "", availabilityType: "" });
   const [designatedShift, setDesignatedShift] = useState({
@@ -329,6 +330,9 @@ export function OperationsPortalClient({
     values: {
       contractorIds?: string[];
       requiredCrewSize?: string;
+      assignmentDate?: string;
+      assignmentStartTime?: string;
+      assignmentEndTime?: string;
       travelBufferMinutes?: string;
       travelBufferOverride?: boolean;
       note?: string;
@@ -345,6 +349,9 @@ export function OperationsPortalClient({
           leadId: lead.leadId,
           contractorIds: values.contractorIds ?? [],
           requiredCrewSize: Number(values.requiredCrewSize || 1),
+          assignmentDate: values.assignmentDate ?? "",
+          assignmentStartTime: values.assignmentStartTime ?? "",
+          assignmentEndTime: values.assignmentEndTime ?? "",
           travelBufferMinutes: Number(values.travelBufferMinutes || 30),
           travelBufferOverride: Boolean(values.travelBufferOverride),
           note: values.note ?? "",
@@ -356,6 +363,12 @@ export function OperationsPortalClient({
         setAssignmentRows((current) =>
           replaceLeadAssignments(current, lead.leadId, payload.assignments ?? []),
         );
+      }
+      if (payload?.candidates) {
+        setAssignmentCandidateRows((current) => ({
+          ...current,
+          [lead.leadId]: payload.candidates ?? [],
+        }));
       }
       if (!response.ok || !payload?.ok) {
         setNotice({ tone: "error", message: friendlyError(payload) });
@@ -616,7 +629,7 @@ export function OperationsPortalClient({
           <JobCard
             assignments={assignmentRows.filter((assignment) => assignment.leadId === lead.leadId)}
             busyAction={busyAction}
-            candidates={assignmentCandidates[lead.leadId] ?? []}
+            candidates={assignmentCandidateRows[lead.leadId] ?? []}
             contractorDbConfigured={contractorDbConfigured}
             contractors={contractorAccounts}
             isOwner={isOwner}
@@ -1498,9 +1511,14 @@ function CrewAssignmentPanel({
   const [requiredCrewSize, setRequiredCrewSize] = useState(String(assignments[0]?.requiredCrewSize || 1));
   const [travelBufferMinutes, setTravelBufferMinutes] = useState(String(assignments[0]?.travelBufferMinutes || 30));
   const [travelBufferOverride, setTravelBufferOverride] = useState(Boolean(assignments[0]?.travelBufferOverride));
+  const initialSchedule = initialAssignmentSchedule(lead, assignments);
+  const [assignmentDate, setAssignmentDate] = useState(initialSchedule.date);
+  const [assignmentStartTime, setAssignmentStartTime] = useState(initialSchedule.startTime);
+  const [assignmentEndTime, setAssignmentEndTime] = useState(initialSchedule.endTime);
   const [selectedContractors, setSelectedContractors] = useState(
     assignments
       .filter((assignment) => [ASSIGNMENT_STATUS_PROPOSED, ASSIGNMENT_STATUS_APPROVED, ASSIGNMENT_STATUS_CONFLICT_REVIEW].includes(assignment.status))
+      .filter((assignment) => contractors.some((contractor) => contractor.id === assignment.contractorId && contractor.status === "ACTIVE"))
       .map((assignment) => assignment.contractorId),
   );
   const [note, setNote] = useState("");
@@ -1514,6 +1532,18 @@ function CrewAssignmentPanel({
   );
   const selectedCount = selectedContractors.length;
   const crewShort = selectedCount < Number(requiredCrewSize || 1);
+  const scheduleMissing = !assignmentDate || !assignmentStartTime || !assignmentEndTime;
+  const assignableContractors = contractors.filter((contractor) => contractor.status === "ACTIVE");
+  const crewValues = {
+    assignmentDate,
+    assignmentStartTime,
+    assignmentEndTime,
+    contractorIds: selectedContractors,
+    requiredCrewSize,
+    travelBufferMinutes,
+    travelBufferOverride,
+    note,
+  };
 
   function toggleContractor(contractorId: string) {
     setSelectedContractors((current) =>
@@ -1537,19 +1567,34 @@ function CrewAssignmentPanel({
       <div className="operations-section__header">
         <div>
           <h3>Crew Assignments</h3>
-          <p>Save a crew proposal first. Approval rechecks availability and conflicts before contractors see the job.</p>
+          <p>Set the job schedule and crew, then save a proposal or approve it after availability is rechecked.</p>
         </div>
       </div>
       <dl className="owner-status-detail">
         <div><dt>Required Crew</dt><dd>{requiredCrewSize}</dd></div>
         <div><dt>Selected</dt><dd>{selectedCount}</dd></div>
         <div><dt>Travel Buffer</dt><dd>{travelBufferMinutes} minutes{travelBufferOverride ? " / override" : ""}</dd></div>
-        <div><dt>Schedule</dt><dd>{assignmentWindowLabel(lead)}</dd></div>
+        <div><dt>Schedule</dt><dd>{assignmentWindowLabel(assignmentDate, assignmentStartTime, assignmentEndTime)}</dd></div>
       </dl>
+      {scheduleMissing ? (
+        <p className="owner-inline-error">Set a job date, start time, and end time before saving or approving a crew.</p>
+      ) : null}
       {crewShort ? (
         <p className="owner-inline-error">Selected crew is below the required crew size.</p>
       ) : null}
       <div className="field-grid">
+        <label className="field">
+          <span>Job date</span>
+          <input disabled={isBusy} min={todayDateValue()} onChange={(event) => setAssignmentDate(event.target.value)} type="date" value={assignmentDate} />
+        </label>
+        <label className="field">
+          <span>Start time</span>
+          <input disabled={isBusy} onChange={(event) => setAssignmentStartTime(event.target.value)} type="time" value={assignmentStartTime} />
+        </label>
+        <label className="field">
+          <span>End time</span>
+          <input disabled={isBusy} onChange={(event) => setAssignmentEndTime(event.target.value)} type="time" value={assignmentEndTime} />
+        </label>
         <label className="field">
           <span>Required crew size</span>
           <input disabled={isBusy} min="1" onChange={(event) => setRequiredCrewSize(event.target.value)} type="number" value={requiredCrewSize} />
@@ -1567,12 +1612,12 @@ function CrewAssignmentPanel({
         <textarea disabled={isBusy} maxLength={500} onChange={(event) => setNote(event.target.value)} value={note} />
       </label>
       <div className="availability-list">
-        {contractors.length === 0 ? (
+        {assignableContractors.length === 0 ? (
           <div className="owner-empty">
-            <h2>No contractor accounts yet.</h2>
-            <p>Create contractor accounts before assigning crews.</p>
+            <h2>No active contractor accounts.</h2>
+            <p>Activate contractor accounts before assigning crews.</p>
           </div>
-        ) : contractors.map((contractor) => {
+        ) : assignableContractors.map((contractor) => {
           const candidate = candidates.find((item) => item.contractorId === contractor.id);
           return (
           <label className="availability-row assignment-choice" key={contractor.id}>
@@ -1594,16 +1639,16 @@ function CrewAssignmentPanel({
       <div className="owner-actions owner-actions--compact">
         <button
           className="button button--ghost"
-          disabled={isBusy || selectedContractors.length === 0}
-          onClick={() => onCrewUpdate(lead, "propose", { contractorIds: selectedContractors, requiredCrewSize, travelBufferMinutes, travelBufferOverride, note })}
+          disabled={isBusy || scheduleMissing || selectedContractors.length === 0}
+          onClick={() => onCrewUpdate(lead, "propose", crewValues)}
           type="button"
         >
           {busyAction?.leadId === lead.leadId && busyAction.action === "crew-propose" ? "Saving..." : "Save Proposal"}
         </button>
         <button
           className="button button--primary"
-          disabled={isBusy || proposed.length === 0 || crewShort}
-          onClick={() => onCrewUpdate(lead, "approve", { contractorIds: selectedContractors, requiredCrewSize, travelBufferMinutes, travelBufferOverride, note })}
+          disabled={isBusy || scheduleMissing || selectedContractors.length === 0 || crewShort}
+          onClick={() => onCrewUpdate(lead, "approve", crewValues)}
           type="button"
         >
           {busyAction?.leadId === lead.leadId && busyAction.action === "crew-approve" ? "Approving..." : "Approve Crew"}
@@ -1744,11 +1789,80 @@ function crewActionSuccess(action: "propose" | "approve" | "reject" | "cancel") 
   return "Crew proposal saved.";
 }
 
-function assignmentWindowLabel(lead: SheetLead) {
-  return [
-    lead.confirmedDate || lead.requestedDate || "Date not set",
-    lead.confirmedTime || lead.requestedTime || "Time not set",
-  ].join(" / ");
+function assignmentWindowLabel(date: string, startTime: string, endTime: string) {
+  if (!date || !startTime || !endTime) return "Date not set / Time not set";
+  return `${date} / ${formatTimeInput(startTime)}-${formatTimeInput(endTime)}`;
+}
+
+function initialAssignmentSchedule(lead: SheetLead, assignments: ContractorAssignment[]) {
+  const activeAssignment = assignments.find((assignment) =>
+    [ASSIGNMENT_STATUS_PROPOSED, ASSIGNMENT_STATUS_APPROVED, ASSIGNMENT_STATUS_CONFLICT_REVIEW].includes(assignment.status),
+  ) ?? assignments[0];
+  if (activeAssignment?.scheduledStart && activeAssignment?.scheduledEnd) {
+    return {
+      date: isoToLocalDateInput(activeAssignment.scheduledStart),
+      startTime: isoToLocalTimeInput(activeAssignment.scheduledStart),
+      endTime: isoToLocalTimeInput(activeAssignment.scheduledEnd),
+    };
+  }
+
+  const date = lead.confirmedDate || lead.requestedDate || "";
+  const startTime = timeLabelToInputValue(lead.confirmedTime || lead.requestedTime);
+  return {
+    date,
+    startTime,
+    endTime: startTime ? addMinutesToTimeInput(startTime, 120) : "",
+  };
+}
+
+function timeLabelToInputValue(label: string) {
+  const match = label.match(/(\d{1,2}):(\d{2})\s*([AP]M)/i);
+  if (!match) return "";
+  let hour = Number(match[1]);
+  const minute = Number(match[2]);
+  const meridiem = match[3].toUpperCase();
+  if (meridiem === "PM" && hour < 12) hour += 12;
+  if (meridiem === "AM" && hour === 12) hour = 0;
+  return `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
+}
+
+function addMinutesToTimeInput(time: string, minutesToAdd: number) {
+  const [hour, minute] = time.split(":").map(Number);
+  if (![hour, minute].every(Number.isFinite)) return "";
+  const date = new Date(Date.UTC(2000, 0, 1, hour, minute + minutesToAdd));
+  return `${String(date.getUTCHours()).padStart(2, "0")}:${String(date.getUTCMinutes()).padStart(2, "0")}`;
+}
+
+function isoToLocalDateInput(value: string) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  return new Intl.DateTimeFormat("en-CA", {
+    day: "2-digit",
+    month: "2-digit",
+    timeZone: "America/Los_Angeles",
+    year: "numeric",
+  }).format(date);
+}
+
+function isoToLocalTimeInput(value: string) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  const parts = new Intl.DateTimeFormat("en-US", {
+    hour: "2-digit",
+    hour12: false,
+    minute: "2-digit",
+    timeZone: "America/Los_Angeles",
+  }).formatToParts(date);
+  const map = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  return `${map.hour}:${map.minute}`;
+}
+
+function formatTimeInput(time: string) {
+  const [hourValue, minute] = time.split(":").map(Number);
+  if (![hourValue, minute].every(Number.isFinite)) return time;
+  const hour = hourValue % 12 || 12;
+  const meridiem = hourValue >= 12 ? "PM" : "AM";
+  return `${hour}:${String(minute).padStart(2, "0")} ${meridiem}`;
 }
 
 function candidateLabel(candidate: AssignmentCandidate | undefined, accountStatus: string) {

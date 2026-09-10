@@ -60,6 +60,7 @@ import {
 } from "../app/lib/contractors/database.ts";
 import {
   assignmentInputFromLead,
+  localDateAndTimeToIso,
   localDateTimeLabelToIso,
 } from "../app/lib/contractors/assignmentSchedule.ts";
 import {
@@ -533,6 +534,10 @@ test("crew assignment approval workflow is owner-only and database-backed", () =
 
   assert.equal(uiSource.includes("Crew Assignments"), true);
   assert.equal(uiSource.includes("Required crew size"), true);
+  assert.equal(uiSource.includes("Job date"), true);
+  assert.equal(uiSource.includes("Start time"), true);
+  assert.equal(uiSource.includes("End time"), true);
+  assert.equal(uiSource.includes("assignableContractors"), true);
   assert.equal(uiSource.includes("Travel buffer minutes"), true);
   assert.equal(uiSource.includes("Save Proposal"), true);
   assert.equal(uiSource.includes("Approve Crew"), true);
@@ -556,6 +561,7 @@ test("crew assignment schedule parsing uses the business timezone including dayl
   const winter = localDateTimeLabelToIso("2026-12-15", "Tue, Dec 15, 9:00 AM");
   assert.equal(summer, "2026-07-15T16:00:00.000Z");
   assert.equal(winter, "2026-12-15T17:00:00.000Z");
+  assert.equal(localDateAndTimeToIso("2026-07-15", "09:00"), "2026-07-15T16:00:00.000Z");
 
   const input = assignmentInputFromLead(sheetLeadFixture({
     leadId: "WHS-20260715-CREW01",
@@ -569,6 +575,25 @@ test("crew assignment schedule parsing uses the business timezone including dayl
   assert.equal(input?.scheduledEnd, "2026-07-15T18:00:00.000Z");
   assert.equal(input?.requiredCrewSize, 2);
   assert.equal(input?.travelBufferMinutes, 45);
+
+  const manualScheduleInput = assignmentInputFromLead(sheetLeadFixture({
+    leadId: "WHS-20260715-MANUAL",
+    name: "Manual Crew Test",
+    requestedDate: "",
+    requestedTime: "",
+    confirmedDate: "",
+    confirmedTime: "",
+  }), {
+    assignmentDate: "2026-07-15",
+    assignmentStartTime: "09:00",
+    assignmentEndTime: "11:30",
+    requiredCrewSize: 2,
+    contractorIds: ["ctr_a", "ctr_b"],
+    travelBufferMinutes: 30,
+  });
+  assert.equal(manualScheduleInput?.scheduledStart, "2026-07-15T16:00:00.000Z");
+  assert.equal(manualScheduleInput?.scheduledEnd, "2026-07-15T18:30:00.000Z");
+  assert.deepEqual(manualScheduleInput?.contractorIds, ["ctr_a", "ctr_b"]);
 });
 
 test("manual lead conversion and decline are owner-only persisted transitions", () => {

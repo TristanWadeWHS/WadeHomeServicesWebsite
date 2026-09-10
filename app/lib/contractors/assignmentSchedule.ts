@@ -6,16 +6,23 @@ export function assignmentInputFromLead(
   overrides: {
     contractorIds?: string[];
     requiredCrewSize?: number;
+    scheduledStart?: string;
+    scheduledEnd?: string;
+    assignmentDate?: string;
+    assignmentStartTime?: string;
+    assignmentEndTime?: string;
     travelBufferMinutes?: number;
     travelBufferOverride?: boolean;
     note?: string;
   } = {},
 ): AssignmentProposalInput | null {
-  const start = leadScheduleStart(lead);
+  const start = overrides.scheduledStart || localDateAndTimeToIso(overrides.assignmentDate ?? "", overrides.assignmentStartTime ?? "") || leadScheduleStart(lead);
   if (!start) return null;
-  const end = new Date(
-    new Date(start).getTime() + Number(process.env.BOOKING_APPOINTMENT_MINUTES || 120) * 60_000,
-  ).toISOString();
+  const end = overrides.scheduledEnd ||
+    localDateAndTimeToIso(overrides.assignmentDate ?? "", overrides.assignmentEndTime ?? "") ||
+    new Date(
+      new Date(start).getTime() + Number(process.env.BOOKING_APPOINTMENT_MINUTES || 120) * 60_000,
+    ).toISOString();
 
   return {
     leadId: lead.leadId,
@@ -48,6 +55,21 @@ export function localDateTimeLabelToIso(date: string, label: string) {
   if (meridiem === "PM" && hour < 12) hour += 12;
   if (meridiem === "AM" && hour === 12) hour = 0;
   const [year, month, day] = date.split("-").map(Number);
+  if (![year, month, day, hour, minute].every(Number.isFinite)) return "";
+  const utcGuess = new Date(Date.UTC(year, month - 1, day, hour, minute));
+  const offset = timezoneOffsetMs(
+    utcGuess,
+    process.env.BOOKING_TIMEZONE || "America/Los_Angeles",
+  );
+  return new Date(utcGuess.getTime() - offset).toISOString();
+}
+
+export function localDateAndTimeToIso(date: string, time: string) {
+  const match = time.match(/^(\d{1,2}):(\d{2})$/);
+  if (!date || !match) return "";
+  const [year, month, day] = date.split("-").map(Number);
+  const hour = Number(match[1]);
+  const minute = Number(match[2]);
   if (![year, month, day, hour, minute].every(Number.isFinite)) return "";
   const utcGuess = new Date(Date.UTC(year, month - 1, day, hour, minute));
   const offset = timezoneOffsetMs(
