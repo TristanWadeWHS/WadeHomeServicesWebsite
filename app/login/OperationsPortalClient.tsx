@@ -1515,6 +1515,7 @@ function CrewAssignmentPanel({
   const [assignmentDate, setAssignmentDate] = useState(initialSchedule.date);
   const [assignmentStartTime, setAssignmentStartTime] = useState(initialSchedule.startTime);
   const [assignmentEndTime, setAssignmentEndTime] = useState(initialSchedule.endTime);
+  const [availabilityNeedsRecheck, setAvailabilityNeedsRecheck] = useState(false);
   const [selectedContractors, setSelectedContractors] = useState(
     assignments
       .filter((assignment) => [ASSIGNMENT_STATUS_PROPOSED, ASSIGNMENT_STATUS_APPROVED, ASSIGNMENT_STATUS_CONFLICT_REVIEW].includes(assignment.status))
@@ -1542,7 +1543,7 @@ function CrewAssignmentPanel({
       return `${contractor?.displayName ?? candidate.contractorName}: ${candidate.conflictReason || "Not available for this job window."}`;
     })
     .filter(Boolean);
-  const selectedHasConflict = selectedCandidateIssues.length > 0;
+  const selectedHasConflict = !availabilityNeedsRecheck && selectedCandidateIssues.length > 0;
   const crewValues = {
     assignmentDate,
     assignmentStartTime,
@@ -1560,6 +1561,11 @@ function CrewAssignmentPanel({
         ? current.filter((id) => id !== contractorId)
         : [...current, contractorId],
     );
+  }
+
+  async function handleCrewUpdate(action: "propose" | "approve") {
+    await onCrewUpdate(lead, action, crewValues);
+    setAvailabilityNeedsRecheck(false);
   }
 
   if (!contractorDbConfigured) {
@@ -1599,18 +1605,30 @@ function CrewAssignmentPanel({
           </ul>
         </div>
       ) : null}
+      {availabilityNeedsRecheck ? (
+        <p className="portal-empty-copy">Availability will be rechecked against the current schedule when you save or approve.</p>
+      ) : null}
       <div className="field-grid">
         <label className="field">
           <span>Job date</span>
-          <input disabled={isBusy} min={todayDateValue()} onChange={(event) => setAssignmentDate(event.target.value)} type="date" value={assignmentDate} />
+          <input disabled={isBusy} min={todayDateValue()} onChange={(event) => {
+            setAssignmentDate(event.target.value);
+            setAvailabilityNeedsRecheck(true);
+          }} type="date" value={assignmentDate} />
         </label>
         <label className="field">
           <span>Start time</span>
-          <input disabled={isBusy} onChange={(event) => setAssignmentStartTime(event.target.value)} type="time" value={assignmentStartTime} />
+          <input disabled={isBusy} onChange={(event) => {
+            setAssignmentStartTime(event.target.value);
+            setAvailabilityNeedsRecheck(true);
+          }} type="time" value={assignmentStartTime} />
         </label>
         <label className="field">
           <span>End time</span>
-          <input disabled={isBusy} onChange={(event) => setAssignmentEndTime(event.target.value)} type="time" value={assignmentEndTime} />
+          <input disabled={isBusy} onChange={(event) => {
+            setAssignmentEndTime(event.target.value);
+            setAvailabilityNeedsRecheck(true);
+          }} type="time" value={assignmentEndTime} />
         </label>
         <label className="field">
           <span>Required crew size</span>
@@ -1621,6 +1639,7 @@ function CrewAssignmentPanel({
           <input disabled={isBusy} min="0" onChange={(event) => {
             setTravelBufferMinutes(event.target.value);
             setTravelBufferOverride(true);
+            setAvailabilityNeedsRecheck(true);
           }} type="number" value={travelBufferMinutes} />
         </label>
       </div>
@@ -1646,8 +1665,8 @@ function CrewAssignmentPanel({
             />
             <span>
               <strong>{contractor.displayName}</strong>
-              <small>{candidateLabel(candidate, contractor.status)}</small>
-              {candidate?.conflictReason ? <small>{candidate.conflictReason}</small> : null}
+              <small>{candidateLabel(candidate, contractor.status, availabilityNeedsRecheck)}</small>
+              {!availabilityNeedsRecheck && candidate?.conflictReason ? <small>{candidate.conflictReason}</small> : null}
             </span>
           </label>
           );
@@ -1657,7 +1676,7 @@ function CrewAssignmentPanel({
         <button
           className="button button--ghost"
           disabled={isBusy || scheduleMissing || selectedHasConflict || selectedContractors.length === 0}
-          onClick={() => onCrewUpdate(lead, "propose", crewValues)}
+          onClick={() => handleCrewUpdate("propose")}
           type="button"
         >
           {busyAction?.leadId === lead.leadId && busyAction.action === "crew-propose" ? "Saving..." : "Save Proposal"}
@@ -1665,7 +1684,7 @@ function CrewAssignmentPanel({
         <button
           className="button button--primary"
           disabled={isBusy || scheduleMissing || selectedHasConflict || selectedContractors.length === 0 || crewShort}
-          onClick={() => onCrewUpdate(lead, "approve", crewValues)}
+          onClick={() => handleCrewUpdate("approve")}
           type="button"
         >
           {busyAction?.leadId === lead.leadId && busyAction.action === "crew-approve" ? "Approving..." : "Approve Crew"}
@@ -1882,8 +1901,9 @@ function formatTimeInput(time: string) {
   return `${hour}:${String(minute).padStart(2, "0")} ${meridiem}`;
 }
 
-function candidateLabel(candidate: AssignmentCandidate | undefined, accountStatus: string) {
+function candidateLabel(candidate: AssignmentCandidate | undefined, accountStatus: string, availabilityNeedsRecheck = false) {
   if (accountStatus !== "ACTIVE") return accountStatus;
+  if (availabilityNeedsRecheck) return "Recheck needed";
   if (!candidate) return "Availability not evaluated";
   if (candidate.conflict) return "Conflict";
   if (candidate.onCall) return "On-call available";
