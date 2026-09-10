@@ -1534,6 +1534,15 @@ function CrewAssignmentPanel({
   const crewShort = selectedCount < Number(requiredCrewSize || 1);
   const scheduleMissing = !assignmentDate || !assignmentStartTime || !assignmentEndTime;
   const assignableContractors = contractors.filter((contractor) => contractor.status === "ACTIVE");
+  const selectedCandidateIssues = selectedContractors
+    .map((contractorId) => {
+      const contractor = assignableContractors.find((account) => account.id === contractorId);
+      const candidate = candidates.find((item) => item.contractorId === contractorId);
+      if (!candidate?.conflict) return "";
+      return `${contractor?.displayName ?? candidate.contractorName}: ${candidate.conflictReason || "Not available for this job window."}`;
+    })
+    .filter(Boolean);
+  const selectedHasConflict = selectedCandidateIssues.length > 0;
   const crewValues = {
     assignmentDate,
     assignmentStartTime,
@@ -1581,6 +1590,14 @@ function CrewAssignmentPanel({
       ) : null}
       {crewShort ? (
         <p className="owner-inline-error">Selected crew is below the required crew size.</p>
+      ) : null}
+      {selectedHasConflict ? (
+        <div className="owner-inline-error" role="alert">
+          <p>Resolve crew availability conflicts before saving or approving.</p>
+          <ul>
+            {selectedCandidateIssues.map((issue) => <li key={issue}>{issue}</li>)}
+          </ul>
+        </div>
       ) : null}
       <div className="field-grid">
         <label className="field">
@@ -1639,7 +1656,7 @@ function CrewAssignmentPanel({
       <div className="owner-actions owner-actions--compact">
         <button
           className="button button--ghost"
-          disabled={isBusy || scheduleMissing || selectedContractors.length === 0}
+          disabled={isBusy || scheduleMissing || selectedHasConflict || selectedContractors.length === 0}
           onClick={() => onCrewUpdate(lead, "propose", crewValues)}
           type="button"
         >
@@ -1647,7 +1664,7 @@ function CrewAssignmentPanel({
         </button>
         <button
           className="button button--primary"
-          disabled={isBusy || scheduleMissing || selectedContractors.length === 0 || crewShort}
+          disabled={isBusy || scheduleMissing || selectedHasConflict || selectedContractors.length === 0 || crewShort}
           onClick={() => onCrewUpdate(lead, "approve", crewValues)}
           type="button"
         >
