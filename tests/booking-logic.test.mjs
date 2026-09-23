@@ -2,17 +2,22 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 import {
+  CANCELLED_STATUS,
   CLOSED_STATUS,
+  COMPLETED_STATUS,
+  DECLINED_STATUS,
   LEAD_SOURCE,
   LEAD_STATUS,
   MANUAL_LEAD_SOURCE,
   MANUAL_LEAD_STATUS,
+  manualLeadBucket,
   REQUIRED_SHEET_COLUMNS,
 } from "../app/lib/booking/config.ts";
 import {
   buildCalendarEventResource,
   buildHistoricalRow,
   googleConfigured,
+  validateJobEdit,
 } from "../app/lib/booking/google.ts";
 import {
   buildCustomerConfirmationPayload,
@@ -372,6 +377,52 @@ test("operations Sheet schema includes owner and close metadata without duplicat
   assert.equal(REQUIRED_SHEET_COLUMNS.includes("Closed By"), true);
   assert.equal(REQUIRED_SHEET_COLUMNS.includes("Close Reason"), true);
   assert.equal(CLOSED_STATUS, "Closed");
+});
+
+test("manual lead status buckets separate active, completed, and lost outcomes", () => {
+  assert.equal(manualLeadBucket(MANUAL_LEAD_STATUS), "active");
+  assert.equal(manualLeadBucket(COMPLETED_STATUS), "completed");
+  assert.equal(manualLeadBucket(DECLINED_STATUS), "declined");
+  assert.equal(manualLeadBucket(CLOSED_STATUS), "declined");
+  assert.equal(manualLeadBucket(CANCELLED_STATUS), "declined");
+  assert.equal(manualLeadBucket("Approved / Scheduled"), "converted");
+});
+
+test("job cancellation is owner-only, idempotent, audited, and isolated from completion", () => {
+  const routeSource = readFileSync("app/api/operations/job/cancel/route.ts", "utf8");
+  const googleSource = readFileSync("app/lib/booking/google.ts", "utf8");
+
+  assert.equal(routeSource.includes("requireRole(request, ROLE_OWNER)"), true);
+  assert.equal(routeSource.includes("isSameOriginRequest"), true);
+  assert.equal(routeSource.includes("cancelJob"), true);
+  assert.equal(googleSource.includes("if (lead.status === CANCELLED_STATUS)"), true);
+  assert.equal(googleSource.includes('"Cancelled At": timestamp'), true);
+  assert.equal(googleSource.includes('"Cancelled By": cancelledBy'), true);
+  assert.equal(googleSource.includes('"Cancellation Reason": reason.value'), true);
+  assert.equal(googleSource.includes("cancelCalendarEventForLead(lead)"), true);
+  assert.equal(googleSource.includes("linkedLeadId !== lead.leadId"), true);
+  assert.equal(REQUIRED_SHEET_COLUMNS.includes("Cancelled At"), true);
+  assert.equal(REQUIRED_SHEET_COLUMNS.includes("Cancelled By"), true);
+  assert.equal(REQUIRED_SHEET_COLUMNS.includes("Cancellation Reason"), true);
+  assert.equal(routeSource.includes("completeJob"), false);
+});
+
+test("active job edits validate canonical fields and remain owner-only", () => {
+  const routeSource = readFileSync("app/api/operations/job/edit/route.ts", "utf8");
+  const portalSource = readFileSync("app/login/OperationsPortalClient.tsx", "utf8");
+
+  assert.equal(routeSource.includes("requireRole(request, ROLE_OWNER)"), true);
+  assert.equal(routeSource.includes("isSameOriginRequest"), true);
+  assert.equal(routeSource.includes("editableFields.has(field)"), true);
+  assert.equal(portalSource.includes("canEdit={isOwner}"), true);
+  assert.equal(validateJobEdit("email", "not-an-email").ok, false);
+  assert.equal(validateJobEdit("zip", "92691").ok, true);
+  assert.equal(validateJobEdit("services", "Junk Removal, Light Demolition").ok, true);
+  assert.equal(validateJobEdit("services", "Unsupported Service").ok, false);
+  assert.deepEqual(validateJobEdit("approvedAmount", "1,250.50"), {
+    ok: true,
+    value: "1250.50",
+  });
 });
 
 test("approval requires approved amount and business owner in UI and server path", () => {

@@ -101,6 +101,9 @@ export type SheetLead = {
   closedAt: string;
   closedBy: string;
   closeReason: string;
+  cancelledAt: string;
+  cancelledBy: string;
+  cancellationReason: string;
   historicalTransferStatus: string;
   historicalTransferTimestamp: string;
   auditTrail: string;

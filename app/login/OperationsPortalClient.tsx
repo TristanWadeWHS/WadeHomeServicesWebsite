@@ -2,6 +2,7 @@
 
 import { type KeyboardEvent, useState } from "react";
 import {
+  APPOINTMENT_TYPES,
   APPROVED_STATUS,
   CLOSED_STATUS,
   CONFLICT_STATUS,
@@ -9,8 +10,10 @@ import {
   DECLINED_STATUS,
   IN_PROGRESS_STATUS,
   LEAD_STATUS,
+  manualLeadBucket,
   MANUAL_LEAD_SOURCE,
   MANUAL_LEAD_STATUS,
+  SERVICE_OPTIONS,
 } from "../lib/booking/config";
 import { ROLE_OWNER, type OperationsUser } from "../lib/booking/ownerAuth";
 import type { OwnerDecisionResult, SheetLead } from "../lib/booking/types";
@@ -34,6 +37,23 @@ type BusyAction = {
 
 type PortalTab = "requests" | "active" | "leads";
 type LeadAction = "convert" | "decline";
+type LeadSubtab = "active" | "completed" | "declined";
+type JobAction = "status" | "complete" | "cancel" | "edit";
+type JobEditField =
+  | "name"
+  | "phone"
+  | "email"
+  | "streetAddress"
+  | "city"
+  | "state"
+  | "zip"
+  | "accessNotes"
+  | "services"
+  | "appointmentType"
+  | "projectDescription"
+  | "businessOwner"
+  | "approvedAmount"
+  | "internalNotes";
 
 type OperationsResult = {
   ok: boolean;
@@ -74,10 +94,20 @@ export function OperationsPortalClient({
   const [notice, setNotice] = useState<Notice | null>(null);
   const [busyAction, setBusyAction] = useState<BusyAction>(null);
   const [showLeadForm, setShowLeadForm] = useState(false);
+  const [leadSubtab, setLeadSubtab] = useState<LeadSubtab>("active");
   const [manualLead, setManualLead] = useState<ManualLeadForm>(emptyManualLead);
   const isOwner = user.role === ROLE_OWNER;
   const [activeTab, setActiveTab] = useState<PortalTab>(isOwner ? "requests" : "active");
   const availableTabs: PortalTab[] = isOwner ? ["requests", "active", "leads"] : ["active"];
+  const activeManualLeads = manualLeads.filter((lead) => manualLeadBucket(lead.status) === "active");
+  const completedManualLeads = manualLeads.filter((lead) => manualLeadBucket(lead.status) === "completed");
+  const declinedManualLeads = manualLeads.filter((lead) => manualLeadBucket(lead.status) === "declined");
+  const visibleManualLeads =
+    leadSubtab === "active"
+      ? activeManualLeads
+      : leadSubtab === "completed"
+        ? completedManualLeads
+        : declinedManualLeads;
 
   function handleTabKeyDown(event: KeyboardEvent<HTMLButtonElement>) {
     if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
@@ -92,6 +122,22 @@ export function OperationsPortalClient({
             ? (currentIndex + 1) % availableTabs.length
             : (currentIndex - 1 + availableTabs.length) % availableTabs.length;
     setActiveTab(availableTabs[nextIndex]);
+  }
+
+  function handleLeadSubtabKeyDown(event: KeyboardEvent<HTMLButtonElement>) {
+    if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
+    event.preventDefault();
+    const tabs: LeadSubtab[] = ["active", "completed", "declined"];
+    const currentIndex = tabs.indexOf(leadSubtab);
+    const nextIndex =
+      event.key === "Home"
+        ? 0
+        : event.key === "End"
+          ? tabs.length - 1
+          : event.key === "ArrowRight"
+            ? (currentIndex + 1) % tabs.length
+            : (currentIndex - 1 + tabs.length) % tabs.length;
+    setLeadSubtab(tabs[nextIndex]);
   }
 
   function upsertLead(updatedLead: SheetLead) {
@@ -237,9 +283,9 @@ export function OperationsPortalClient({
 
   async function mutateJob(
     leadId: string,
-    action: "status" | "complete",
+    action: JobAction,
     values: Record<string, string>,
-  ) {
+  ): Promise<boolean> {
     setNotice(null);
     setBusyAction({ leadId, action });
     const form = new FormData();
@@ -258,15 +304,24 @@ export function OperationsPortalClient({
 
       if (!response.ok || !payload?.ok) {
         setNotice({ tone: "error", message: friendlyError(payload) });
-        return;
+        return false;
       }
 
       setNotice({
         tone: "success",
-        message: action === "complete" ? "Job completed and transferred." : "Job status updated.",
+        message:
+          action === "complete"
+            ? "Job completed and transferred."
+            : action === "cancel"
+              ? "Job cancelled."
+              : action === "edit"
+                ? "Job details updated."
+                : "Job status updated.",
       });
+      return true;
     } catch {
       setNotice({ tone: "error", message: "This job could not be updated. Please try again." });
+      return false;
     } finally {
       setBusyAction(null);
     }
@@ -377,6 +432,7 @@ export function OperationsPortalClient({
         {jobLeads.map((lead) => (
           <JobCard
             busyAction={busyAction}
+            isOwner={isOwner}
             key={lead.leadId}
             lead={lead}
             onMutate={mutateJob}
@@ -410,20 +466,65 @@ export function OperationsPortalClient({
             />
           ) : null}
 
-          {manualLeads.length === 0 ? (
-            <div className="owner-empty">
-              <h2>No manual leads.</h2>
-              <p>Owner-created opportunities with Lead status will appear here.</p>
-            </div>
-          ) : null}
-          {manualLeads.map((lead) => (
-            <ManualLeadCard
-              busyAction={busyAction}
-              key={lead.leadId}
-              lead={lead}
-              onUpdate={updateManualLead}
-            />
-          ))}
+          <div className="operations-subtabs" role="tablist" aria-label="Lead status">
+            <button
+              aria-controls="operations-leads-list"
+              aria-selected={leadSubtab === "active"}
+              className="operations-subtab"
+              id="operations-leads-tab-active"
+              onKeyDown={handleLeadSubtabKeyDown}
+              onClick={() => setLeadSubtab("active")}
+              role="tab"
+              type="button"
+            >
+              Active Leads ({activeManualLeads.length})
+            </button>
+            <button
+              aria-controls="operations-leads-list"
+              aria-selected={leadSubtab === "completed"}
+              className="operations-subtab"
+              id="operations-leads-tab-completed"
+              onKeyDown={handleLeadSubtabKeyDown}
+              onClick={() => setLeadSubtab("completed")}
+              role="tab"
+              type="button"
+            >
+              Completed Leads ({completedManualLeads.length})
+            </button>
+            <button
+              aria-controls="operations-leads-list"
+              aria-selected={leadSubtab === "declined"}
+              className="operations-subtab"
+              id="operations-leads-tab-declined"
+              onKeyDown={handleLeadSubtabKeyDown}
+              onClick={() => setLeadSubtab("declined")}
+              role="tab"
+              type="button"
+            >
+              Declined Leads ({declinedManualLeads.length})
+            </button>
+          </div>
+
+          <div
+            aria-labelledby={`operations-leads-tab-${leadSubtab}`}
+            id="operations-leads-list"
+            role="tabpanel"
+          >
+            {visibleManualLeads.length === 0 ? (
+              <div className="owner-empty">
+                <h2>No {leadSubtab} leads.</h2>
+                <p>Leads will appear here when they reach this stage.</p>
+              </div>
+            ) : null}
+            {visibleManualLeads.map((lead) => (
+              <ManualLeadCard
+                busyAction={busyAction}
+                key={lead.leadId}
+                lead={lead}
+                onUpdate={updateManualLead}
+              />
+            ))}
+          </div>
         </section>
       ) : null}
     </div>
@@ -761,12 +862,14 @@ function RequestCard({
 
 function JobCard({
   busyAction,
+  isOwner,
   lead,
   onMutate,
 }: {
   busyAction: BusyAction;
+  isOwner: boolean;
   lead: SheetLead;
-  onMutate: (leadId: string, action: "status" | "complete", values: Record<string, string>) => Promise<void>;
+  onMutate: (leadId: string, action: JobAction, values: Record<string, string>) => Promise<boolean>;
 }) {
   const [status, setStatus] = useState(lead.status === IN_PROGRESS_STATUS ? IN_PROGRESS_STATUS : APPROVED_STATUS);
   const [finalAmount, setFinalAmount] = useState(lead.completionFinalAmount || lead.approvedAmount || "");
@@ -774,19 +877,26 @@ function JobCard({
   const [distance, setDistance] = useState(lead.distance || "");
   const [notes, setNotes] = useState(lead.completionNotes || "");
   const [fallbackOwner, setFallbackOwner] = useState("");
+  const [showCancellation, setShowCancellation] = useState(false);
+  const [cancellationReason, setCancellationReason] = useState("");
+  const [cancellationConfirmed, setCancellationConfirmed] = useState(false);
   const hasStoredOwner = Boolean(lead.businessOwner.trim());
   const isBusy = busyAction !== null;
   const isCompleteBusy = busyAction?.leadId === lead.leadId && busyAction.action === "complete";
   const isStatusBusy = busyAction?.leadId === lead.leadId && busyAction.action === "status";
+  const isCancelBusy = busyAction?.leadId === lead.leadId && busyAction.action === "cancel";
   const completed = lead.status === COMPLETED_STATUS;
 
   return (
     <article className="owner-lead">
       <LeadHeader lead={lead} />
-      <LeadDetails lead={lead} />
+      <JobEditableDetails
+        busyAction={busyAction}
+        isOwner={isOwner}
+        lead={lead}
+        onMutate={onMutate}
+      />
       <dl className="owner-status-detail">
-        <div><dt>Approved Amount</dt><dd>{lead.approvedAmount || "Not recorded"}</dd></div>
-        <div><dt>Owner</dt><dd>{lead.businessOwner || "Not recorded"}</dd></div>
         <div><dt>Calendar Event</dt><dd>{lead.calendarEventId || "Not recorded"}</dd></div>
         <div><dt>Completed At</dt><dd>{lead.completedAt || "Not completed"}</dd></div>
       </dl>
@@ -860,9 +970,234 @@ function JobCard({
               {isCompleteBusy ? "Completing..." : "Complete Job"}
             </button>
           </div>
+
+          {isOwner ? (
+            <div className="operations-cancel-job">
+              {!showCancellation ? (
+                <button
+                  className="button button--danger"
+                  disabled={isBusy}
+                  onClick={() => setShowCancellation(true)}
+                  type="button"
+                >
+                  Cancel Job
+                </button>
+              ) : (
+                <div className="operations-cancel-panel">
+                  <label className="field">
+                    <span>Cancellation reason</span>
+                    <textarea
+                      disabled={isBusy}
+                      maxLength={300}
+                      onChange={(event) => setCancellationReason(event.target.value)}
+                      required
+                      value={cancellationReason}
+                    />
+                  </label>
+                  <label className="operations-confirm-cancel">
+                    <input
+                      checked={cancellationConfirmed}
+                      disabled={isBusy}
+                      onChange={(event) => setCancellationConfirmed(event.target.checked)}
+                      type="checkbox"
+                    />
+                    <span>I confirm this job should be cancelled.</span>
+                  </label>
+                  <div className="owner-actions owner-actions--compact">
+                    <button
+                      className="button button--danger"
+                      disabled={isBusy || !cancellationReason.trim() || !cancellationConfirmed}
+                      onClick={() => onMutate(lead.leadId, "cancel", { reason: cancellationReason })}
+                      type="button"
+                    >
+                      {isCancelBusy ? "Cancelling..." : "Confirm Cancellation"}
+                    </button>
+                    <button
+                      className="button button--ghost"
+                      disabled={isBusy}
+                      onClick={() => {
+                        setShowCancellation(false);
+                        setCancellationConfirmed(false);
+                      }}
+                      type="button"
+                    >
+                      Keep Job
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          ) : null}
         </div>
       )}
     </article>
+  );
+}
+
+function JobEditableDetails({
+  busyAction,
+  isOwner,
+  lead,
+  onMutate,
+}: {
+  busyAction: BusyAction;
+  isOwner: boolean;
+  lead: SheetLead;
+  onMutate: (leadId: string, action: JobAction, values: Record<string, string>) => Promise<boolean>;
+}) {
+  const fields: Array<{
+    field: JobEditField;
+    label: string;
+    value: string;
+    type?: "email" | "number" | "tel" | "text";
+    multiline?: boolean;
+    options?: readonly string[];
+    multiple?: boolean;
+  }> = [
+    { field: "name", label: "Name", value: lead.name },
+    { field: "phone", label: "Phone", value: lead.phone, type: "tel" },
+    { field: "email", label: "Email", value: lead.email, type: "email" },
+    { field: "streetAddress", label: "Street Address", value: lead.streetAddress },
+    { field: "city", label: "City", value: lead.city },
+    { field: "state", label: "State", value: lead.state },
+    { field: "zip", label: "ZIP Code", value: lead.zip },
+    { field: "accessNotes", label: "Unit / Gate / Access Notes", value: lead.accessNotes, multiline: true },
+    { field: "services", label: "Service Type(s)", value: lead.services, options: SERVICE_OPTIONS, multiple: true },
+    { field: "appointmentType", label: "Appointment Type", value: lead.appointmentType, options: APPOINTMENT_TYPES },
+    { field: "projectDescription", label: "Project Description", value: lead.projectDescription, multiline: true },
+    { field: "businessOwner", label: "Owner", value: lead.businessOwner },
+    { field: "approvedAmount", label: "Approved Amount", value: lead.approvedAmount, type: "number" },
+    { field: "internalNotes", label: "Operational Notes", value: lead.internalNotes, multiline: true },
+  ];
+
+  return (
+    <dl className="owner-detail-grid operations-editable-grid">
+      {fields.filter((item) => isOwner || item.field !== "internalNotes").map((item) => (
+        <EditableJobField
+          {...item}
+          busy={busyAction !== null}
+          canEdit={isOwner}
+          key={item.field}
+          onSave={async (value) =>
+            onMutate(lead.leadId, "edit", { field: item.field, value })
+          }
+        />
+      ))}
+      <div>
+        <dt>Requested Time</dt>
+        <dd>{lead.requestedDate} / {lead.requestedTime}</dd>
+      </div>
+      <div>
+        <dt>Photos</dt>
+        <dd><LeadPhotos lead={lead} /></dd>
+      </div>
+    </dl>
+  );
+}
+
+function EditableJobField({
+  busy,
+  canEdit,
+  field,
+  label,
+  multiline = false,
+  multiple = false,
+  onSave,
+  options,
+  type = "text",
+  value,
+}: {
+  busy: boolean;
+  canEdit: boolean;
+  field: JobEditField;
+  label: string;
+  multiline?: boolean;
+  multiple?: boolean;
+  onSave: (value: string) => Promise<boolean>;
+  options?: readonly string[];
+  type?: "email" | "number" | "tel" | "text";
+  value: string;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(value);
+  const selectedOptions = new Set(draft.split(",").map((item) => item.trim()).filter(Boolean));
+
+  async function save() {
+    if (await onSave(draft)) setEditing(false);
+  }
+
+  return (
+    <div className={`operations-editable-field operations-editable-field--${field}`}>
+      <dt>
+        <span>{label}</span>
+        {canEdit && !editing ? (
+          <button
+            aria-label={`Edit ${label}`}
+            className="operations-edit-button"
+            disabled={busy}
+            onClick={() => {
+              setDraft(value);
+              setEditing(true);
+            }}
+            title={`Edit ${label}`}
+            type="button"
+          >
+            &#9998;
+          </button>
+        ) : null}
+      </dt>
+      <dd>
+        {editing ? (
+          <div className="operations-inline-editor">
+            {options && multiple ? (
+              <div className="operations-inline-options">
+                {options.map((option) => (
+                  <label key={option}>
+                    <input
+                      checked={selectedOptions.has(option)}
+                      disabled={busy}
+                      onChange={(event) => {
+                        const next = new Set(selectedOptions);
+                        if (event.target.checked) next.add(option);
+                        else next.delete(option);
+                        setDraft(options.filter((item) => next.has(item)).join(", "));
+                      }}
+                      type="checkbox"
+                    />
+                    <span>{option}</span>
+                  </label>
+                ))}
+              </div>
+            ) : options ? (
+              <select disabled={busy} onChange={(event) => setDraft(event.target.value)} value={draft}>
+                {options.map((option) => <option key={option}>{option}</option>)}
+              </select>
+            ) : multiline ? (
+              <textarea disabled={busy} onChange={(event) => setDraft(event.target.value)} value={draft} />
+            ) : (
+              <input
+                disabled={busy}
+                min={type === "number" ? "0" : undefined}
+                onChange={(event) => setDraft(event.target.value)}
+                step={type === "number" ? "0.01" : undefined}
+                type={type}
+                value={draft}
+              />
+            )}
+            <div className="owner-actions owner-actions--compact">
+              <button className="button button--primary" disabled={busy} onClick={save} type="button">
+                {busy ? "Saving..." : "Save"}
+              </button>
+              <button className="button button--ghost" disabled={busy} onClick={() => setEditing(false)} type="button">
+                Cancel
+              </button>
+            </div>
+          </div>
+        ) : (
+          value || "Not provided"
+        )}
+      </dd>
+    </div>
   );
 }
 

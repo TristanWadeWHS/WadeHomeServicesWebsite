@@ -57,6 +57,9 @@ export const OPERATIONS_SHEET_COLUMNS = [
   "Closed At",
   "Closed By",
   "Close Reason",
+  "Cancelled At",
+  "Cancelled By",
+  "Cancellation Reason",
   "Historical Transfer Status",
   "Historical Transfer Timestamp",
   "Audit Trail",
@@ -75,6 +78,16 @@ export const COMPLETED_STATUS = "Completed";
 export const DECLINED_STATUS = "Declined";
 export const CONFLICT_STATUS = "Pending Approval - Time Conflict";
 export const CLOSED_STATUS = "Closed";
+export const CANCELLED_STATUS = "Cancelled";
+
+export type ManualLeadBucket = "active" | "completed" | "declined" | "converted";
+
+export function manualLeadBucket(status: string): ManualLeadBucket {
+  if (status === MANUAL_LEAD_STATUS) return "active";
+  if (status === COMPLETED_STATUS) return "completed";
+  if ([DECLINED_STATUS, CLOSED_STATUS, CANCELLED_STATUS].includes(status)) return "declined";
+  return "converted";
+}
 
 export type ServiceOption = (typeof SERVICE_OPTIONS)[number];
 export type AppointmentType = (typeof APPOINTMENT_TYPES)[number];

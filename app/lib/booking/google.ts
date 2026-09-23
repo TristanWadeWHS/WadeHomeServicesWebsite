@@ -1,5 +1,7 @@
 import {
+  APPOINTMENT_TYPES,
   APPROVED_STATUS,
+  CANCELLED_STATUS,
   CLOSED_STATUS,
   CONFLICT_STATUS,
   COMPLETED_STATUS,
@@ -10,6 +12,7 @@ import {
   MANUAL_LEAD_SOURCE,
   MANUAL_LEAD_STATUS,
   REQUIRED_SHEET_COLUMNS,
+  SERVICE_OPTIONS,
 } from "./config";
 import type { BusyWindow } from "./scheduling";
 import { isSlotStillAvailable } from "./scheduling";
@@ -40,6 +43,21 @@ export type CloseRequestInput = {
 };
 
 export type JobStatusInput = typeof APPROVED_STATUS | typeof IN_PROGRESS_STATUS;
+export type JobEditField =
+  | "name"
+  | "phone"
+  | "email"
+  | "streetAddress"
+  | "city"
+  | "state"
+  | "zip"
+  | "accessNotes"
+  | "services"
+  | "appointmentType"
+  | "projectDescription"
+  | "businessOwner"
+  | "approvedAmount"
+  | "internalNotes";
 export type ManualLeadDecisionResult = {
   ok: true;
   lead: SheetLead;
@@ -492,6 +510,142 @@ export async function updateJobStatus(
   return { ok: true as const, lead: updated };
 }
 
+export async function cancelJob(
+  leadId: string,
+  reasonValue: string,
+  cancelledBy = "Owner",
+) {
+  const lead = await getLeadById(leadId);
+  if (!lead) return { ok: false as const, message: "Lead not found." };
+  if (lead.status === CANCELLED_STATUS) {
+    return { ok: true as const, lead, calendarEventCancelled: false };
+  }
+
+  const currentStatus = normalizeOperationalStatus(lead.status);
+  if (currentStatus !== APPROVED_STATUS && currentStatus !== IN_PROGRESS_STATUS) {
+    return { ok: false as const, message: `Lead is ${lead.status}.`, lead };
+  }
+
+  const reason = sanitizeRequiredText(reasonValue, "Cancellation reason", 300);
+  if (!reason.ok) return { ok: false as const, message: reason.message, lead };
+
+  const calendarEventCancelled = await cancelCalendarEventForLead(lead);
+  const timestamp = new Date().toISOString();
+  const updated = await updateLeadColumns(lead, {
+    Status: CANCELLED_STATUS,
+    "Operational Status": CANCELLED_STATUS,
+    "Cancelled At": timestamp,
+    "Cancelled By": cancelledBy,
+    "Cancellation Reason": reason.value,
+    "Audit Trail": appendAuditEntry(
+      lead.auditTrail,
+      `${cancelledBy} cancelled job. Reason: ${reason.value}. Calendar event ${calendarEventCancelled ? "cancelled" : "not present"}.`,
+      timestamp,
+    ),
+    "Internal Notes": appendInternalNote(
+      lead.internalNotes,
+      `Job cancelled by ${cancelledBy}: ${reason.value}`,
+    ),
+  });
+
+  return { ok: true as const, lead: updated, calendarEventCancelled };
+}
+
+export async function updateActiveJobField(
+  leadId: string,
+  field: JobEditField,
+  value: string,
+  updatedBy = "Owner",
+) {
+  const lead = await getLeadById(leadId);
+  if (!lead) return { ok: false as const, message: "Lead not found." };
+
+  const currentStatus = normalizeOperationalStatus(lead.status);
+  if (currentStatus !== APPROVED_STATUS && currentStatus !== IN_PROGRESS_STATUS) {
+    return { ok: false as const, message: `Lead is ${lead.status}.`, lead };
+  }
+
+  const validated = validateJobEdit(field, value);
+  if (!validated.ok) return { ok: false as const, message: validated.message, lead };
+
+  const timestamp = new Date().toISOString();
+  const column = jobEditColumn(field);
+  const internalNotes = field === "internalNotes" ? validated.value : lead.internalNotes;
+  const updated = await updateLeadColumns(lead, {
+    [column]: validated.value,
+    "Audit Trail": appendAuditEntry(
+      lead.auditTrail,
+      `${updatedBy} updated ${jobEditLabel(field)}.`,
+      timestamp,
+    ),
+    "Internal Notes": appendInternalNote(
+      internalNotes,
+      `${updatedBy} updated ${jobEditLabel(field)}.`,
+    ),
+  });
+
+  return { ok: true as const, lead: updated };
+}
+
+export function validateJobEdit(field: JobEditField, value: string) {
+  const normalized = value.replace(/\r\n/g, "\n").trim();
+  const requiredFields = new Set<JobEditField>([
+    "name",
+    "services",
+    "appointmentType",
+    "projectDescription",
+    "businessOwner",
+    "approvedAmount",
+  ]);
+  if (requiredFields.has(field) && !normalized) {
+    return { ok: false as const, message: `${jobEditLabel(field)} is required.` };
+  }
+
+  const limits: Record<JobEditField, number> = {
+    name: 160,
+    phone: 40,
+    email: 254,
+    streetAddress: 240,
+    city: 120,
+    state: 80,
+    zip: 12,
+    accessNotes: 800,
+    services: 240,
+    appointmentType: 120,
+    projectDescription: 2000,
+    businessOwner: 120,
+    approvedAmount: 40,
+    internalNotes: 4000,
+  };
+  if (normalized.length > limits[field]) {
+    return { ok: false as const, message: `${jobEditLabel(field)} is too long.` };
+  }
+
+  if (field === "email" && normalized && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalized)) {
+    return { ok: false as const, message: "Enter a valid email address." };
+  }
+  if (field === "zip" && normalized && !/^\d{5}(?:-\d{4})?$/.test(normalized)) {
+    return { ok: false as const, message: "Enter a valid ZIP code." };
+  }
+  if (field === "services") {
+    const services = normalized.split(",").map((item) => item.trim()).filter(Boolean);
+    if (services.length === 0 || services.some((service) => !SERVICE_OPTIONS.includes(service as (typeof SERVICE_OPTIONS)[number]))) {
+      return { ok: false as const, message: "Select only supported service types." };
+    }
+    return { ok: true as const, value: [...new Set(services)].join(", ") };
+  }
+  if (field === "appointmentType" && !APPOINTMENT_TYPES.includes(normalized as (typeof APPOINTMENT_TYPES)[number])) {
+    return { ok: false as const, message: "Select a supported appointment type." };
+  }
+  if (field === "approvedAmount") {
+    const amount = parseNonNegativeMoney(normalized, "Approved amount");
+    if (!amount.ok) return amount;
+    return { ok: true as const, value: formatMoney(amount.value) };
+  }
+
+  return { ok: true as const, value: normalized };
+}
+
 export async function completeJob(
   leadId: string,
   input: CloseoutInput,
@@ -716,6 +870,41 @@ async function createCalendarEventForLead(
   return payload.id;
 }
 
+async function cancelCalendarEventForLead(lead: SheetLead) {
+  if (!lead.calendarEventId) return false;
+
+  const calendarId = requireEnv("GOOGLE_CALENDAR_ID");
+  const token = await getGoogleAccessToken([CALENDAR_EVENTS_SCOPE]);
+  const eventUrl = `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(
+    calendarId,
+  )}/events/${encodeURIComponent(lead.calendarEventId)}`;
+  const lookup = await fetch(eventUrl, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (lookup.status === 404 || lookup.status === 410) return false;
+  if (!lookup.ok) {
+    throw new Error(`Google Calendar event lookup failed with ${lookup.status}: ${await lookup.text()}`);
+  }
+
+  const event = (await lookup.json()) as {
+    extendedProperties?: { private?: { leadId?: string } };
+  };
+  const linkedLeadId = event.extendedProperties?.private?.leadId;
+  if (linkedLeadId && linkedLeadId !== lead.leadId) {
+    throw new Error("Stored Calendar event belongs to a different lead.");
+  }
+
+  const response = await fetch(eventUrl, {
+    method: "DELETE",
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (response.status === 404 || response.status === 410) return false;
+  if (!response.ok) {
+    throw new Error(`Google Calendar event cancellation failed with ${response.status}: ${await response.text()}`);
+  }
+  return true;
+}
+
 export function buildCalendarEventResource(
   lead: SheetLead,
   slot: { start: string; end: string },
@@ -915,6 +1104,9 @@ function sheetRowToLead(
     closedAt: value("Closed At"),
     closedBy: value("Closed By"),
     closeReason: value("Close Reason"),
+    cancelledAt: value("Cancelled At"),
+    cancelledBy: value("Cancelled By"),
+    cancellationReason: value("Cancellation Reason"),
     historicalTransferStatus: value("Historical Transfer Status"),
     historicalTransferTimestamp: value("Historical Transfer Timestamp"),
     auditTrail: value("Audit Trail"),
@@ -959,6 +1151,9 @@ function leadToRow(headers: readonly string[], lead: SheetLead) {
     "Closed At": lead.closedAt,
     "Closed By": lead.closedBy,
     "Close Reason": lead.closeReason,
+    "Cancelled At": lead.cancelledAt,
+    "Cancelled By": lead.cancelledBy,
+    "Cancellation Reason": lead.cancellationReason,
     "Historical Transfer Status": lead.historicalTransferStatus,
     "Historical Transfer Timestamp": lead.historicalTransferTimestamp,
     "Audit Trail": lead.auditTrail,
@@ -1067,6 +1262,46 @@ function sanitizeRequiredText(value: string, label: string, maxLength: number): 
     return { ok: false, message: `${label} must be ${maxLength} characters or fewer.` };
   }
   return { ok: true, value: normalized };
+}
+
+function jobEditColumn(field: JobEditField) {
+  const columns: Record<JobEditField, string> = {
+    name: "Name",
+    phone: "Phone Number",
+    email: "Email",
+    streetAddress: "Street Address",
+    city: "City",
+    state: "State",
+    zip: "ZIP Code",
+    accessNotes: "Optional Unit / Gate / Access Notes",
+    services: "Service Type(s)",
+    appointmentType: "Appointment Type",
+    projectDescription: "Project Description",
+    businessOwner: "Owner",
+    approvedAmount: "Approved Amount",
+    internalNotes: "Internal Notes",
+  };
+  return columns[field];
+}
+
+function jobEditLabel(field: JobEditField) {
+  const labels: Record<JobEditField, string> = {
+    name: "Name",
+    phone: "Phone",
+    email: "Email",
+    streetAddress: "Street Address",
+    city: "City",
+    state: "State",
+    zip: "ZIP Code",
+    accessNotes: "Unit / Gate / Access Notes",
+    services: "Service Type(s)",
+    appointmentType: "Appointment Type",
+    projectDescription: "Project Description",
+    businessOwner: "Owner",
+    approvedAmount: "Approved Amount",
+    internalNotes: "Operational Notes",
+  };
+  return labels[field];
 }
 
 function emailNeedsConfigurationStatus() {
