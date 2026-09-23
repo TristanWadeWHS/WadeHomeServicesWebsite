@@ -1,6 +1,6 @@
 "use client";
 
-import { type KeyboardEvent, useState } from "react";
+import { type KeyboardEvent, useEffect, useState } from "react";
 import {
   APPOINTMENT_TYPES,
   APPROVED_STATUS,
@@ -35,7 +35,7 @@ type BusyAction = {
   action: string;
 } | null;
 
-type PortalTab = "requests" | "active" | "leads";
+type PortalTab = "requests" | "active" | "leads" | "pricer";
 type LeadAction = "convert" | "decline";
 type LeadSubtab = "active" | "completed" | "declined";
 type JobAction = "status" | "complete" | "cancel" | "edit";
@@ -98,7 +98,9 @@ export function OperationsPortalClient({
   const [manualLead, setManualLead] = useState<ManualLeadForm>(emptyManualLead);
   const isOwner = user.role === ROLE_OWNER;
   const [activeTab, setActiveTab] = useState<PortalTab>(isOwner ? "requests" : "active");
-  const availableTabs: PortalTab[] = isOwner ? ["requests", "active", "leads"] : ["active"];
+  const availableTabs: PortalTab[] = isOwner
+    ? ["requests", "active", "leads", "pricer"]
+    : ["active"];
   const activeManualLeads = manualLeads.filter((lead) => manualLeadBucket(lead.status) === "active");
   const completedManualLeads = manualLeads.filter((lead) => manualLeadBucket(lead.status) === "completed");
   const declinedManualLeads = manualLeads.filter((lead) => manualLeadBucket(lead.status) === "declined");
@@ -108,6 +110,12 @@ export function OperationsPortalClient({
       : leadSubtab === "completed"
         ? completedManualLeads
         : declinedManualLeads;
+
+  useEffect(() => {
+    if (isOwner && activeTab === "pricer") {
+      window.location.assign("/api/owner/ai-pricer/launch");
+    }
+  }, [activeTab, isOwner]);
 
   function handleTabKeyDown(event: KeyboardEvent<HTMLButtonElement>) {
     if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
@@ -392,6 +400,20 @@ export function OperationsPortalClient({
             Leads
           </button>
         ) : null}
+        {isOwner ? (
+          <button
+            aria-controls="operations-panel-pricer"
+            aria-selected={activeTab === "pricer"}
+            className="operations-tab"
+            id="operations-tab-pricer"
+            onKeyDown={handleTabKeyDown}
+            onClick={() => setActiveTab("pricer")}
+            role="tab"
+            type="button"
+          >
+            AI Pricer
+          </button>
+        ) : null}
       </div>
 
       {isOwner && activeTab === "requests" ? (
@@ -524,6 +546,25 @@ export function OperationsPortalClient({
                 onUpdate={updateManualLead}
               />
             ))}
+          </div>
+        </section>
+      ) : null}
+
+      {isOwner && activeTab === "pricer" ? (
+        <section
+          className="operations-section"
+          id="operations-panel-pricer"
+          role="tabpanel"
+          aria-labelledby="operations-tab-pricer"
+        >
+          <div className="operations-section__header">
+            <div>
+              <h3>AI Pricer</h3>
+              <p>Opening the secure Wade Home Services pricing workspace...</p>
+            </div>
+            <a className="button button--primary" href="/api/owner/ai-pricer/launch">
+              Open AI Pricer
+            </a>
           </div>
         </section>
       ) : null}

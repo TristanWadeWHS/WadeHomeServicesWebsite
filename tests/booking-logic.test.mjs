@@ -26,6 +26,10 @@ import {
   ownerNotificationConfigured,
 } from "../app/lib/booking/ownerNotifications.ts";
 import {
+  aiPricerExchangeUrl,
+  createAiPricerAssertion,
+} from "../app/lib/booking/aiPricerSso.ts";
+import {
   buildAvailabilitySlots,
   buildAvailabilitySlotsForDate,
   isSlotStillAvailable,
@@ -263,12 +267,41 @@ test("operations portal uses owner-only workflow tabs", () => {
   assert.equal(clientSource.includes("Requests"), true);
   assert.equal(clientSource.includes("Active Jobs"), true);
   assert.equal(clientSource.includes("Leads"), true);
+  assert.equal(clientSource.includes("AI Pricer"), true);
   assert.equal(clientSource.includes("+ Add Lead"), true);
   assert.equal(clientSource.includes('useState<PortalTab>(isOwner ? "requests" : "active")'), true);
   assert.equal(clientSource.includes('activeTab === "requests"'), true);
   assert.equal(clientSource.includes('activeTab === "active"'), true);
   assert.equal(clientSource.includes('activeTab === "leads"'), true);
+  assert.equal(clientSource.includes('activeTab === "pricer"'), true);
   assert.equal(clientSource.includes("isOwner ? ("), true);
+});
+
+test("AI Pricer handoff is owner-only and uses a short-lived signed assertion", () => {
+  const routeSource = readFileSync("app/api/owner/ai-pricer/launch/route.ts", "utf8");
+  const originalSecret = process.env.AI_PRICER_SSO_SECRET;
+  const originalUrl = process.env.AI_PRICER_URL;
+
+  process.env.AI_PRICER_SSO_SECRET = "test-only-sso-secret";
+  process.env.AI_PRICER_URL = "https://pricer.example.test/legacy-path?secret=no";
+  try {
+    const assertion = createAiPricerAssertion(1_800_000_000_000);
+    const [payload, signature] = assertion.split(".");
+    const claims = JSON.parse(Buffer.from(payload, "base64url").toString("utf8"));
+
+    assert.equal(routeSource.includes("requireRole(request, ROLE_OWNER)"), true);
+    assert.equal(routeSource.includes('name="assertion"'), true);
+    assert.equal(routeSource.includes("OWNER_APPROVAL_TOKEN"), false);
+    assert.equal(aiPricerExchangeUrl().toString(), "https://pricer.example.test/api/integrations/whs/session");
+    assert.equal(claims.sub, "owner");
+    assert.equal(claims.exp - claims.iat, 60);
+    assert.match(signature, /^[A-Za-z0-9_-]+$/);
+  } finally {
+    if (originalSecret === undefined) delete process.env.AI_PRICER_SSO_SECRET;
+    else process.env.AI_PRICER_SSO_SECRET = originalSecret;
+    if (originalUrl === undefined) delete process.env.AI_PRICER_URL;
+    else process.env.AI_PRICER_URL = originalUrl;
+  }
 });
 
 test("operations login uses password wording without changing submit action", () => {

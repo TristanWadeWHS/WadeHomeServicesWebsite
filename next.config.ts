@@ -2,6 +2,7 @@ import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
   async headers() {
+    const aiPricerOrigin = configuredAiPricerOrigin();
     const securityHeaders = [
       { key: "X-Frame-Options", value: "DENY" },
       { key: "X-Content-Type-Options", value: "nosniff" },
@@ -33,8 +34,38 @@ const nextConfig: NextConfig = {
         source: "/(.*)",
         headers: securityHeaders,
       },
+      {
+        source: "/api/owner/ai-pricer/launch",
+        headers: securityHeaders.map((header) =>
+          header.key === "Content-Security-Policy"
+            ? {
+                ...header,
+                value: [
+                  "default-src 'none'",
+                  "base-uri 'none'",
+                  "object-src 'none'",
+                  "frame-ancestors 'none'",
+                  `form-action ${aiPricerOrigin}`,
+                  "script-src 'unsafe-inline'",
+                  "style-src 'unsafe-inline'",
+                ].join("; "),
+              }
+            : header,
+        ),
+      },
     ];
   },
 };
 
 export default nextConfig;
+
+function configuredAiPricerOrigin() {
+  try {
+    const url = new URL(
+      process.env.AI_PRICER_URL ?? "https://whs-pricing-tool-p8kg.vercel.app",
+    );
+    return url.origin;
+  } catch {
+    return "https://whs-pricing-tool-p8kg.vercel.app";
+  }
+}
