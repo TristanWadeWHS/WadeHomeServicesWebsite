@@ -31,6 +31,12 @@ export async function GET(request: Request) {
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Opening AI Pricer</title>
+    <style>
+      main { visibility: hidden; animation: show-fallback 0s 2s forwards; }
+      @keyframes show-fallback { to { visibility: visible; } }
+    </style>
+    <noscript><style>main { visibility: visible; }</style></noscript>
+    <script src="/ai-pricer-handoff.js" defer></script>
   </head>
   <body>
     <main>
@@ -40,7 +46,6 @@ export async function GET(request: Request) {
         <button type="submit">Continue to AI Pricer</button>
       </form>
     </main>
-    <script>document.getElementById('ai-pricer-handoff').submit();</script>
   </body>
 </html>`;
 
@@ -52,7 +57,7 @@ export async function GET(request: Request) {
           "base-uri 'none'",
           `form-action ${exchangeUrl.origin}`,
           "frame-ancestors 'none'",
-          "script-src 'unsafe-inline'",
+          "script-src 'self'",
           "style-src 'unsafe-inline'",
         ].join("; "),
         "content-type": "text/html; charset=utf-8",

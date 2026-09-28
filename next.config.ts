@@ -46,7 +46,7 @@ const nextConfig: NextConfig = {
                   "object-src 'none'",
                   "frame-ancestors 'none'",
                   `form-action ${aiPricerOrigin}`,
-                  "script-src 'unsafe-inline'",
+                  "script-src 'self'",
                   "style-src 'unsafe-inline'",
                 ].join("; "),
               }
