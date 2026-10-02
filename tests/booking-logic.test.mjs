@@ -16,7 +16,9 @@ import {
 import {
   buildCalendarEventResource,
   buildHistoricalRow,
+  deterministicCalendarEventId,
   googleConfigured,
+  validateManualLeadSchedule,
   validateJobEdit,
 } from "../app/lib/booking/google.ts";
 import {
@@ -368,7 +370,9 @@ test("manual lead conversion and decline are owner-only persisted transitions", 
   const googleSource = readFileSync("app/lib/booking/google.ts", "utf8");
 
   assert.equal(clientSource.includes("Convert to Active Job"), true);
-  assert.equal(clientSource.includes('onUpdate(lead.leadId, "convert", { approvedAmount })'), true);
+  assert.equal(clientSource.includes("Scheduled Date"), true);
+  assert.equal(clientSource.includes("Scheduled Time"), true);
+  assert.equal(clientSource.includes("businessOwner"), true);
   assert.equal(clientSource.includes("Decline Lead"), true);
   assert.equal(clientSource.includes("Lead converted to active job."), true);
   assert.equal(clientSource.includes("Lead declined."), true);
@@ -384,15 +388,25 @@ test("manual lead conversion and decline are owner-only persisted transitions", 
   assert.equal(declineRoute.includes("isSameOriginRequest"), true);
   assert.equal(convertRoute.includes("convertManualLeadToActiveJob"), true);
   assert.equal(convertRoute.includes('form.get("approvedAmount")'), true);
+  assert.equal(convertRoute.includes('form.get("businessOwner")'), true);
+  assert.equal(convertRoute.includes('form.get("scheduledDate")'), true);
+  assert.equal(convertRoute.includes('form.get("scheduledTime")'), true);
   assert.equal(declineRoute.includes("declineManualLead"), true);
   assert.equal(convertRoute.includes("jsonError(\"Lead could not be converted safely.\""), true);
   assert.equal(declineRoute.includes("jsonError(\"Lead could not be declined safely.\""), true);
 
   assert.equal(googleSource.includes("export async function convertManualLeadToActiveJob"), true);
-  assert.equal(googleSource.includes('parseNonNegativeMoney(approvedAmountValue, "Approved amount")'), true);
+  assert.equal(googleSource.includes('parseNonNegativeMoney(input.approvedAmount, "Approved amount")'), true);
+  assert.equal(googleSource.includes("validateManualLeadSchedule"), true);
+  assert.equal(googleSource.includes("getCalendarBusyWindows(schedule.value.slot.start"), true);
+  assert.equal(googleSource.includes("createCalendarEventForLead("), true);
+  assert.equal(googleSource.includes('"Google Calendar Event ID": eventId'), true);
+  assert.equal(googleSource.includes('"Confirmed Date": schedule.value.date'), true);
+  assert.equal(googleSource.includes('"Confirmed Time": schedule.value.time'), true);
   assert.equal(googleSource.includes('"Approved Amount": formatMoney(approvedAmount.value)'), true);
   assert.equal(googleSource.includes("export async function declineManualLead"), true);
-  assert.equal(googleSource.includes("lead.status === APPROVED_STATUS && lead.operationalStatus === APPROVED_STATUS"), true);
+  assert.equal(googleSource.includes("lead.status === APPROVED_STATUS"), true);
+  assert.equal(googleSource.includes("lead.operationalStatus === APPROVED_STATUS"), true);
   assert.equal(googleSource.includes("lead.status === DECLINED_STATUS"), true);
   assert.equal(googleSource.includes("lead.status !== MANUAL_LEAD_STATUS"), true);
   assert.equal(googleSource.includes("Linked job ID: ${lead.leadId}"), true);
@@ -401,6 +415,38 @@ test("manual lead conversion and decline are owner-only persisted transitions", 
   assert.equal(googleSource.includes('"Operational Status": DECLINED_STATUS'), true);
   assert.equal(googleSource.includes('"Decline Reason": declineReason'), true);
   assert.equal(googleSource.includes("sendOwnerNewLeadNotification"), false);
+});
+
+test("manual lead scheduling follows booking rules and uses a stable Calendar event id", () => {
+  process.env.BOOKING_OPENING_HOUR = "7";
+  process.env.BOOKING_CLOSING_HOUR = "20";
+  process.env.BOOKING_APPOINTMENT_MINUTES = "120";
+  process.env.BOOKING_INTERVAL_MINUTES = "60";
+  process.env.BOOKING_MIN_ADVANCE_HOURS = "12";
+  process.env.BOOKING_TIMEZONE = "America/Los_Angeles";
+
+  const schedule = validateManualLeadSchedule(
+    "2026-09-15",
+    "10:00",
+    new Date("2026-09-01T16:00:00.000Z"),
+  );
+  assert.equal(schedule.ok, true);
+  if (schedule.ok) {
+    assert.equal(schedule.value.time, "10:00 AM");
+    assert.equal(schedule.value.slot.start, "2026-09-15T17:00:00.000Z");
+    assert.equal(schedule.value.slot.end, "2026-09-15T19:00:00.000Z");
+  }
+
+  assert.equal(
+    validateManualLeadSchedule("2026-08-31", "10:00", new Date("2026-09-01T16:00:00.000Z")).ok,
+    false,
+  );
+  assert.equal(
+    deterministicCalendarEventId("WHS-20260915-MANUAL") ===
+      deterministicCalendarEventId("WHS-20260915-MANUAL"),
+    true,
+  );
+  assert.match(deterministicCalendarEventId("WHS-20260915-MANUAL"), /^[a-f0-9]+$/);
 });
 
 test("operations Sheet schema includes owner and close metadata without duplicate owner columns", () => {

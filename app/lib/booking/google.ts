@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import {
   APPOINTMENT_TYPES,
   APPROVED_STATUS,
@@ -15,7 +16,12 @@ import {
   SERVICE_OPTIONS,
 } from "./config";
 import type { BusyWindow } from "./scheduling";
-import { isSlotStillAvailable } from "./scheduling";
+import {
+  buildAvailabilitySlotsForDate,
+  isPastBookingDate,
+  isSlotStillAvailable,
+  isValidDateValue,
+} from "./scheduling";
 import type { NormalizedLead, NormalizedManualLead, OwnerDecisionResult, SheetLead } from "./types";
 import {
   escapeSheetCell,
@@ -61,10 +67,18 @@ export type JobEditField =
 export type ManualLeadDecisionResult = {
   ok: true;
   lead: SheetLead;
+  calendarEventCreated?: boolean;
 } | {
   ok: false;
   message: string;
   lead?: SheetLead;
+};
+
+export type ManualLeadConversionInput = {
+  approvedAmount: string;
+  businessOwner: string;
+  scheduledDate: string;
+  scheduledTime: string;
 };
 
 export type CompletionResult = {
@@ -239,37 +253,75 @@ export async function getLeadById(leadId: string) {
 
 export async function convertManualLeadToActiveJob(
   leadId: string,
-  approvedAmountValue = "",
+  input: ManualLeadConversionInput,
   convertedBy = "Owner",
 ): Promise<ManualLeadDecisionResult> {
   const lead = await getLeadById(leadId);
   if (!lead) return { ok: false, message: "Lead not found." };
-  if (lead.status === APPROVED_STATUS && lead.operationalStatus === APPROVED_STATUS) {
-    return { ok: true, lead };
+  if (
+    lead.status === APPROVED_STATUS &&
+    lead.operationalStatus === APPROVED_STATUS &&
+    lead.calendarEventId
+  ) {
+    return { ok: true, lead, calendarEventCreated: false };
   }
   if (lead.status !== MANUAL_LEAD_STATUS) {
     return { ok: false, message: `Lead is ${lead.status}.`, lead };
   }
-  const approvedAmount = parseNonNegativeMoney(approvedAmountValue, "Approved amount");
+  const approvedAmount = parseNonNegativeMoney(input.approvedAmount, "Approved amount");
   if (!approvedAmount.ok) return { ok: false, message: approvedAmount.message, lead };
+  const businessOwner = sanitizeRequiredText(input.businessOwner, "Owner", 120);
+  if (!businessOwner.ok) return { ok: false, message: businessOwner.message, lead };
+  const schedule = validateManualLeadSchedule(input.scheduledDate, input.scheduledTime);
+  if (!schedule.ok) return { ok: false, message: schedule.message, lead };
+
+  const scheduledLead: SheetLead = {
+    ...lead,
+    approvedAmount: formatMoney(approvedAmount.value),
+    businessOwner: businessOwner.value,
+    requestedDate: schedule.value.date,
+    requestedTime: schedule.value.time,
+  };
+  const existingEventId =
+    lead.calendarEventId ||
+    (await findCalendarEventIdForLead(lead.leadId, schedule.value.slot.start, schedule.value.slot.end));
+  if (!existingEventId) {
+    const busy = await getCalendarBusyWindows(schedule.value.slot.start, schedule.value.slot.end);
+    if (!isSlotStillAvailable(schedule.value.slot.start, schedule.value.slot.end, busy)) {
+      return { ok: false, message: "Requested time is no longer available.", lead };
+    }
+  }
+  const eventId =
+    existingEventId ||
+    (await createCalendarEventForLead(
+      scheduledLead,
+      schedule.value.slot,
+      deterministicCalendarEventId(lead.leadId),
+    ));
 
   const timestamp = new Date().toISOString();
   const updated = await updateLeadColumns(lead, {
     Status: APPROVED_STATUS,
     "Approved Amount": formatMoney(approvedAmount.value),
+    Owner: businessOwner.value,
     "Operational Status": APPROVED_STATUS,
     "Approval / Decision Timestamp": timestamp,
+    "Google Calendar Event ID": eventId,
+    "Requested Date": schedule.value.date,
+    "Requested Time": schedule.value.time,
+    "Confirmed Date": schedule.value.date,
+    "Confirmed Time": schedule.value.time,
     "Audit Trail": appendAuditEntry(
       lead.auditTrail,
-      `${convertedBy} converted manual lead to active job for ${formatMoney(approvedAmount.value)}. Linked job ID: ${lead.leadId}.`,
+      `${convertedBy} converted manual lead to active job for ${formatMoney(approvedAmount.value)}. Owner: ${businessOwner.value}. Linked job ID: ${lead.leadId}.`,
       timestamp,
     ),
     "Internal Notes": appendInternalNote(
       lead.internalNotes,
-      `Manual lead converted to active job. Linked job ID: ${lead.leadId}. Conversion timestamp: ${timestamp}.`,
+      `Manual lead converted to active job and scheduled. Linked job ID: ${lead.leadId}. Conversion timestamp: ${timestamp}. Calendar event ${existingEventId ? "reused" : "created"}.`,
     ),
   });
-  return { ok: true, lead: updated };
+  return { ok: true, lead: updated, calendarEventCreated: !existingEventId };
 }
 
 export async function declineManualLead(
@@ -844,9 +896,11 @@ async function findCalendarEventIdForLead(
 async function createCalendarEventForLead(
   lead: SheetLead,
   slot: { start: string; end: string },
+  eventId?: string,
 ) {
   const calendarId = requireEnv("GOOGLE_CALENDAR_ID");
   const token = await getGoogleAccessToken([CALENDAR_EVENTS_SCOPE]);
+  const resource = buildCalendarEventResource(lead, slot);
   const response = await fetch(
     `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(
       calendarId,
@@ -857,9 +911,23 @@ async function createCalendarEventForLead(
         Authorization: `Bearer ${token}`,
         "Content-Type": "application/json",
       },
-      body: JSON.stringify(buildCalendarEventResource(lead, slot)),
+      body: JSON.stringify(eventId ? { ...resource, id: eventId } : resource),
     },
   );
+  if (response.status === 409 && eventId) {
+    const existing = await fetch(
+      `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(
+        calendarId,
+      )}/events/${encodeURIComponent(eventId)}`,
+      { headers: { Authorization: `Bearer ${token}` } },
+    );
+    if (existing.ok) {
+      const event = (await existing.json()) as {
+        extendedProperties?: { private?: { leadId?: string } };
+      };
+      if (event.extendedProperties?.private?.leadId === lead.leadId) return eventId;
+    }
+  }
   if (!response.ok) {
     throw new Error(
       `Google Calendar event creation failed with ${response.status}: ${await response.text()}`,
@@ -868,6 +936,10 @@ async function createCalendarEventForLead(
   const payload = (await response.json()) as { id?: string };
   if (!payload.id) throw new Error("Google Calendar event creation returned no event id.");
   return payload.id;
+}
+
+export function deterministicCalendarEventId(leadId: string) {
+  return `a${createHash("sha256").update(`whs-calendar:${leadId}`).digest("hex")}`;
 }
 
 async function cancelCalendarEventForLead(lead: SheetLead) {
@@ -1170,14 +1242,60 @@ function leadToRequestedSlot(lead: SheetLead) {
   return { start, end };
 }
 
+export function validateManualLeadSchedule(
+  dateValue: string,
+  timeValue: string,
+  now = new Date(),
+):
+  | {
+      ok: true;
+      value: { date: string; time: string; slot: { start: string; end: string } };
+    }
+  | { ok: false; message: string } {
+  const date = dateValue.trim();
+  const time = timeValue.trim();
+  if (!isValidDateValue(date)) return { ok: false, message: "Scheduled date is required." };
+  if (isPastBookingDate(date, now)) return { ok: false, message: "Scheduled date cannot be in the past." };
+  if (!time) return { ok: false, message: "Scheduled time is required." };
+
+  const start = requestedDateTimeToIso(date, time);
+  if (!start) return { ok: false, message: "Scheduled time is invalid." };
+  const availableByRule = buildAvailabilitySlotsForDate(date, [], now).find(
+    (candidate) => candidate.start === start,
+  );
+  if (!availableByRule) {
+    return {
+      ok: false,
+      message: "Scheduled time is outside the available booking hours or minimum notice window.",
+    };
+  }
+
+  return {
+    ok: true,
+    value: {
+      date,
+      time: new Intl.DateTimeFormat("en-US", {
+        hour: "numeric",
+        minute: "2-digit",
+        timeZone: process.env.BOOKING_TIMEZONE || "America/Los_Angeles",
+      }).format(new Date(availableByRule.start)),
+      slot: { start: availableByRule.start, end: availableByRule.end },
+    },
+  };
+}
+
 function requestedDateTimeToIso(date: string, label: string) {
-  const match = label.match(/(\d{1,2}):(\d{2})\s*([AP]M)/i);
-  if (!date || !match) return "";
-  let hour = Number(match[1]);
-  const minute = Number(match[2]);
-  const meridiem = match[3].toUpperCase();
-  if (meridiem === "PM" && hour < 12) hour += 12;
-  if (meridiem === "AM" && hour === 12) hour = 0;
+  const twelveHour = label.match(/(\d{1,2}):(\d{2})\s*([AP]M)/i);
+  const twentyFourHour = /^(\d{2}):(\d{2})$/.exec(label.trim());
+  if (!date || (!twelveHour && !twentyFourHour)) return "";
+  let hour = Number((twelveHour ?? twentyFourHour)![1]);
+  const minute = Number((twelveHour ?? twentyFourHour)![2]);
+  if (twelveHour) {
+    const meridiem = twelveHour[3].toUpperCase();
+    if (meridiem === "PM" && hour < 12) hour += 12;
+    if (meridiem === "AM" && hour === 12) hour = 0;
+  }
+  if (hour > 23 || minute > 59) return "";
   const [year, month, day] = date.split("-").map(Number);
   const utcGuess = new Date(Date.UTC(year, month - 1, day, hour, minute));
   const offset = timezoneOffsetMs(
@@ -1222,6 +1340,8 @@ function calendarDescription(lead: SheetLead) {
     `Service Address: ${address}`,
     `Service Type(s): ${lead.services}`,
     `Appointment Type: ${lead.appointmentType}`,
+    ...(lead.approvedAmount ? [`Approved Amount: ${lead.approvedAmount}`] : []),
+    ...(lead.businessOwner ? [`Owner: ${lead.businessOwner}`] : []),
     "",
     "Project Description:",
     lead.projectDescription,

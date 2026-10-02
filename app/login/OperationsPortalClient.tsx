@@ -684,6 +684,9 @@ function ManualLeadCard({
   onUpdate: (leadId: string, action: LeadAction, values: Record<string, string>) => Promise<void>;
 }) {
   const [approvedAmount, setApprovedAmount] = useState(lead.approvedAmount || "");
+  const [businessOwner, setBusinessOwner] = useState(lead.businessOwner || "");
+  const [scheduledDate, setScheduledDate] = useState(lead.requestedDate || "");
+  const [scheduledTime, setScheduledTime] = useState(timeInputValue(lead.requestedTime));
   const [declineReason, setDeclineReason] = useState("");
   const isBusy = busyAction !== null;
   const isConvertBusy = busyAction?.leadId === lead.leadId && busyAction.action === "convert";
@@ -721,10 +724,54 @@ function ManualLeadCard({
                 value={approvedAmount}
               />
             </label>
+            <label className="field operations-amount">
+              <span>Owner</span>
+              <input
+                disabled={isBusy}
+                maxLength={120}
+                onChange={(event) => setBusinessOwner(event.target.value)}
+                placeholder="Business owner"
+                type="text"
+                value={businessOwner}
+              />
+            </label>
+            <label className="field operations-amount">
+              <span>Scheduled Date</span>
+              <input
+                disabled={isBusy}
+                min={localDateInputMinimum()}
+                onChange={(event) => setScheduledDate(event.target.value)}
+                type="date"
+                value={scheduledDate}
+              />
+            </label>
+            <label className="field operations-amount">
+              <span>Scheduled Time</span>
+              <input
+                disabled={isBusy}
+                onChange={(event) => setScheduledTime(event.target.value)}
+                step="3600"
+                type="time"
+                value={scheduledTime}
+              />
+            </label>
             <button
               className="button button--primary"
-              disabled={isBusy || !approvedAmount.trim()}
-              onClick={() => onUpdate(lead.leadId, "convert", { approvedAmount })}
+              disabled={
+                isBusy ||
+                !approvedAmount.trim() ||
+                !businessOwner.trim() ||
+                !scheduledDate ||
+                !scheduledTime
+              }
+              onClick={() =>
+                onUpdate(lead.leadId, "convert", {
+                  approvedAmount,
+                  businessOwner,
+                  scheduledDate,
+                  scheduledTime,
+                })
+              }
               type="button"
             >
               {isConvertBusy ? "Converting..." : "Convert to Active Job"}
@@ -755,6 +802,23 @@ function ManualLeadCard({
       ) : null}
     </article>
   );
+}
+
+function localDateInputMinimum() {
+  const today = new Date();
+  const year = today.getFullYear();
+  const month = String(today.getMonth() + 1).padStart(2, "0");
+  const day = String(today.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function timeInputValue(value: string) {
+  const match = value.match(/(\d{1,2}):(\d{2})\s*([AP]M)/i);
+  if (!match) return /^\d{2}:\d{2}$/.test(value) ? value : "";
+  let hour = Number(match[1]);
+  if (match[3].toUpperCase() === "PM" && hour < 12) hour += 12;
+  if (match[3].toUpperCase() === "AM" && hour === 12) hour = 0;
+  return `${String(hour).padStart(2, "0")}:${match[2]}`;
 }
 
 function linkedJobLabel(lead: SheetLead) {
