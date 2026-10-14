@@ -1,6 +1,7 @@
 "use client";
 
 import { type KeyboardEvent, useState } from "react";
+import { CommandCenter } from "../owner/command-center/CommandCenter";
 import {
   APPOINTMENT_TYPES,
   APPROVED_STATUS,
@@ -35,7 +36,7 @@ type BusyAction = {
   action: string;
 } | null;
 
-type PortalTab = "requests" | "active" | "leads";
+type PortalTab = "requests" | "active" | "leads" | "command-center";
 type LeadAction = "convert" | "decline";
 type LeadSubtab = "active" | "completed" | "declined";
 type JobAction = "status" | "complete" | "cancel" | "edit";
@@ -98,7 +99,7 @@ export function OperationsPortalClient({
   const [manualLead, setManualLead] = useState<ManualLeadForm>(emptyManualLead);
   const isOwner = user.role === ROLE_OWNER;
   const [activeTab, setActiveTab] = useState<PortalTab>(isOwner ? "requests" : "active");
-  const availableTabs: PortalTab[] = isOwner ? ["requests", "active", "leads"] : ["active"];
+  const availableTabs: PortalTab[] = isOwner ? ["requests", "active", "leads", "command-center"] : ["active"];
   const activeManualLeads = manualLeads.filter((lead) => manualLeadBucket(lead.status) === "active");
   const completedManualLeads = manualLeads.filter((lead) => manualLeadBucket(lead.status) === "completed");
   const declinedManualLeads = manualLeads.filter((lead) => manualLeadBucket(lead.status) === "declined");
@@ -392,7 +393,14 @@ export function OperationsPortalClient({
             Leads
           </button>
         ) : null}
+        {isOwner ? (
+          <button aria-controls="operations-panel-command-center" aria-selected={activeTab === "command-center"} className="operations-tab" id="operations-tab-command-center" onKeyDown={handleTabKeyDown} onClick={() => setActiveTab("command-center")} role="tab" type="button">Command Center</button>
+        ) : null}
       </div>
+
+      {isOwner && activeTab === "command-center" ? (
+        <section id="operations-panel-command-center" role="tabpanel" aria-labelledby="operations-tab-command-center"><CommandCenter /></section>
+      ) : null}
 
       {isOwner && activeTab === "requests" ? (
         <section className="operations-section" id="operations-panel-requests" role="tabpanel" aria-labelledby="operations-tab-requests">

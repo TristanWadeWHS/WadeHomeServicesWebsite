@@ -926,7 +926,7 @@ export function buildCalendarEventResource(
   };
 }
 
-async function getGoogleAccessToken(scopes: string[]) {
+export async function getGoogleAccessToken(scopes: string[]) {
   const cacheKey = [...scopes].sort().join(" ");
   const scopedToken = cachedTokens.get(cacheKey);
   if (scopedToken && scopedToken.expiresAt > Date.now() + 60_000) {
