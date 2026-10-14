@@ -5,6 +5,7 @@ import { groupNotes, type Note } from "../../lib/command-center/model";
 import styles from "./command-center.module.css";
 
 const API = "/api/owner/command-center";
+type NoteAction = "complete" | "interpret";
 async function call(body?: object) {
   const response = await fetch(API, { method: body ? "POST" : "GET", cache: "no-store", signal: AbortSignal.timeout(45000), headers: body ? { "Content-Type": "application/json" } : undefined, body: body ? JSON.stringify(body) : undefined });
   let data;
@@ -17,6 +18,7 @@ export function CommandCenter() {
   const [notes, setNotes] = useState<Note[]>([]);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
+  const [activeAction, setActiveAction] = useState<{ id: string; action: NoteAction } | null>(null);
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
   const submitting = useRef(false);
@@ -43,12 +45,12 @@ export function CommandCenter() {
       setError(e instanceof Error && e.name !== "TimeoutError" && e.name !== "AbortError" ? e.message : "Save could not be confirmed. Your draft is preserved; retrying will not create a duplicate.");
     } finally { setBusy(false); submitting.current = false; }
   }
-  async function action(id: string, action: "complete" | "interpret") {
+  async function action(id: string, action: NoteAction) {
     if (submitting.current) return;
-    submitting.current = true; setBusy(true); setError("");
+    submitting.current = true; setBusy(true); setActiveAction({ id, action }); setError(""); setNotice("");
     try { const result = await call({ id, action }); setNotice(result.message); await reload(); }
     catch (e) { setError(e instanceof Error ? e.message : "Update failed. Please retry."); }
-    finally { submitting.current = false; setBusy(false); }
+    finally { submitting.current = false; setBusy(false); setActiveAction(null); }
   }
   const groups = groupNotes(notes);
   function cards(items: Note[], empty: string) {
@@ -60,8 +62,12 @@ export function CommandCenter() {
         <details><summary>Original note</summary><p className={styles.original}>{note.original}</p></details>
         {note.completedAt ? <p>Completed {note.completedAt.replace("T", " ")}</p> : null}
         <div className={styles.actions}>
-          {!note.completedAt && note.status !== "Completed" ? <button type="button" className="button button--secondary" disabled={busy} onClick={() => action(note.id, "complete")}>Mark Complete</button> : null}
-          {!note.summary ? <button type="button" className="button button--secondary" disabled={busy} onClick={() => action(note.id, "interpret")}>Retry AI processing</button> : null}
+          {!note.completedAt && note.status !== "Completed" ? <button type="button" className={`button ${styles.completeButton}`} disabled={busy} aria-busy={activeAction?.id === note.id && activeAction.action === "complete"} onClick={() => action(note.id, "complete")}>
+            <span className={styles.actionIcon} aria-hidden="true">✓</span>{activeAction?.id === note.id && activeAction.action === "complete" ? "Completing…" : "Mark Complete"}
+          </button> : null}
+          {!note.summary ? <button type="button" className={`button ${styles.retryButton}`} disabled={busy} aria-busy={activeAction?.id === note.id && activeAction.action === "interpret"} onClick={() => action(note.id, "interpret")}>
+            <span className={styles.actionIcon} aria-hidden="true">↻</span>{activeAction?.id === note.id && activeAction.action === "interpret" ? "Retrying AI…" : "Retry AI Processing"}
+          </button> : null}
         </div>
       </article>
     )) : <p className={styles.empty}>{empty}</p>;

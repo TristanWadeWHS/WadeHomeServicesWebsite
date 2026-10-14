@@ -12,9 +12,18 @@
 .original { white-space: pre-wrap; }
 .actions { display: flex; align-items: center; gap: .8rem; flex-wrap: wrap; margin-top: .7rem; }
 .actions span, .empty { color: #526459; }
+.completeButton, .retryButton { gap: .5rem; transition: background 180ms ease, border-color 180ms ease, box-shadow 180ms ease, color 180ms ease, transform 180ms ease; }
+.completeButton { background: var(--forest); border-color: var(--forest); color: white; box-shadow: 0 5px 12px rgba(24, 62, 44, .16); }
+.completeButton:hover:not(:disabled) { background: var(--forest-deep); border-color: var(--forest-deep); box-shadow: 0 8px 18px rgba(24, 62, 44, .22); }
+.retryButton { background: white; border-color: #7b9984; color: #173d29; }
+.retryButton:hover:not(:disabled) { background: #edf5ee; border-color: var(--forest); box-shadow: 0 5px 12px rgba(24, 62, 44, .12); }
+.completeButton:focus-visible, .retryButton:focus-visible { outline: 3px solid rgba(79, 112, 93, .5); outline-offset: 3px; }
+.completeButton:disabled, .retryButton:disabled { cursor: wait; opacity: .68; transform: none; }
+.actionIcon { color: currentColor; display: inline-flex; font-size: 1.15em; font-weight: 800; line-height: 1; }
 .success, .error { padding: 1rem; border-radius: 8px; }
 .success { background: #e8f3e8; color: #174322; }
 .error { background: #fff0ec; color: #842c1a; }
 .history { padding: 1rem 0; }
 .root summary { cursor: pointer; font-weight: 600; }
 @media(max-width: 700px) { .columns { grid-template-columns: 1fr; gap: 0; } .actions button { width: 100%; } }
+@media (prefers-reduced-motion: reduce) { .completeButton, .retryButton { transition: none; } .completeButton:hover:not(:disabled), .retryButton:hover:not(:disabled) { transform: none; } }
