@@ -41,7 +41,7 @@ test("API/storage: durable save, atomic retries, AI failure, completion, RBAC an
   process.env.OWNER_APPROVAL_TOKEN = "fixture-owner-token";
   process.env.FIELD_MANAGER_ACCESS_TOKEN = "fixture-manager-token";
   process.env.OPENAI_API_KEY = "fixture-ai-key";
-  let rows = [[...HEADERS]]; const receipts = new Set(); let aiFails = true; let aiPrompt; let loseAcknowledgement = false;
+  let rows = [[...HEADERS]]; const receipts = new Set(); let aiFails = true; let aiPrompt; let loseAcknowledgement = false; let missingSheet = false;
   globalThis.fetch = async (input, options = {}) => {
     const url = String(input); const body = options.body ? JSON.parse(String(options.body).startsWith("{") ? options.body : "{}") : {};
     if (url.includes("oauth2.googleapis.com")) return Response.json({ access_token: "fixture-token", expires_in: 3600 });
@@ -50,12 +50,13 @@ test("API/storage: durable save, atomic retries, AI failure, completion, RBAC an
       return aiFails ? new Response("unavailable", { status: 503 }) : Response.json({ status: "completed", output: [{ content: [{ type: "output_text", text: JSON.stringify({ clientName: "", summary: "Call tomorrow", type: "Follow-up", priority: "Normal", followUp: true, followUpDate: "2026-10-14", status: "Pending" }) }] }] });
     }
     assert.ok(url.includes("/command-center-fixture"), "Never write operational sheets");
-    if (url.includes("?fields=")) return Response.json({ properties: { title: "WHS Command Center Database" }, sheets: [{ properties: { sheetId: 7, title: "Notes History" } }] });
+    if (url.includes("?fields=")) return Response.json({ properties: { title: "Owner renamed this spreadsheet" }, sheets: missingSheet ? [] : [{ properties: { sheetId: 7, title: "Notes History" } }] });
     if (url.endsWith("/values:batchUpdate")) {
       for (const entry of body.data) { const m = /!([A-L])(\d+):/.exec(entry.range); const column = m[1].charCodeAt(0) - 65; entry.values[0].forEach((v, i) => { rows[Number(m[2]) - 1][column + i] = v; }); }
       return Response.json({});
     }
     if (url.endsWith(":batchUpdate")) {
+      if (body.requests[0].addSheet) { assert.equal(body.requests[0].addSheet.properties.title, "Notes History"); missingSheet = false; return Response.json({}); }
       if (body.requests[0].updateCells) {
         for (const { updateCells: update } of body.requests) update.rows[0].values.forEach((cell, i) => {
           const row = rows[update.range.startRowIndex];
@@ -85,7 +86,12 @@ test("API/storage: durable save, atomic retries, AI failure, completion, RBAC an
     for (const action of ["save", "complete", "interpret"]) assert.equal((await POST(req({ action, id, original }, ROLE_FIELD_MANAGER))).status, 403);
     const crossOrigin = req({ action: "save", id, original }, ROLE_OWNER); crossOrigin.headers.set("origin", "https://other.test");
     assert.equal((await POST(crossOrigin)).status, 403);
-    assert.equal((await POST(req({ action: "save", id, original }, ROLE_OWNER))).status, 200);
+    const savedResponse = await POST(req({ action: "save", id, original }, ROLE_OWNER));
+    assert.equal(savedResponse.status, 200);
+    const savedPayload = await savedResponse.json();
+    assert.equal(savedPayload.message, "Saved."); assert.equal(savedPayload.note.original, original); assert.equal(savedPayload.note.id, id);
+    assert.match(savedPayload.note.timestamp, /T\d{2}:\d{2}:\d{2}-0[78]:00$/);
+    assert.equal(aiPrompt, undefined, "Saving returns the persisted note without making an AI request");
     await Promise.all([saveOriginal(id, original), saveOriginal(id, original)]);
     assert.equal(rows.length, 2); assert.equal(rows[1][4], original);
     const concurrentId = randomUUID(); await Promise.all([saveOriginal(concurrentId, "second"), saveOriginal(concurrentId, "second")]);
@@ -103,6 +109,6 @@ test("API/storage: durable save, atomic retries, AI failure, completion, RBAC an
     assert.equal(rows[1][4], original); assert.equal(rows[1][10], "Completed"); assert.equal(rows[1][11], completed.completedAt);
     assert.equal(rows[1][9], "2026-10-14");
     rows[0][0] = "Wrong header"; await assert.rejects(readNotes(), /headers/);
-    rows = []; assert.deepEqual(await readNotes(), []); assert.deepEqual(rows[0], [...HEADERS]);
+    rows = []; missingSheet = true; assert.deepEqual(await readNotes(), []); assert.deepEqual(rows[0], [...HEADERS]); assert.equal(missingSheet, false);
   } finally { globalThis.fetch = oldFetch; for (const key of Object.keys(process.env)) if (!(key in oldEnv)) delete process.env[key]; Object.assign(process.env, oldEnv); }
 });

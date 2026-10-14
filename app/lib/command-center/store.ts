@@ -4,7 +4,7 @@ import { HEADERS, fromRow, toRow, localTimestamp, type Note } from "./model";
 const TAB = "Notes History";
 export class CommandCenterError extends Error { constructor(message: string, public status = 503) { super(message); } }
 export function spreadsheetId() {
-  const id = process.env.COMMAND_CENTER_SPREADSHEET_ID;
+  const id = process.env.COMMAND_CENTER_SPREADSHEET_ID?.trim();
   if (!id) throw new CommandCenterError("Command Center storage is not configured. Set COMMAND_CENTER_SPREADSHEET_ID.");
   if ([process.env.GOOGLE_SPREADSHEET_ID, process.env.GOOGLE_SHEETS_SPREADSHEET_ID, HISTORICAL_SPREADSHEET_ID].includes(id)) throw new CommandCenterError("Command Center must use a dedicated spreadsheet.");
   return id;
@@ -37,7 +37,8 @@ export async function readNotes() {
 }
 async function sheetId() {
   const data = await request("?fields=properties(title),sheets(properties(sheetId,title))");
-  if (data.properties?.title !== "WHS Command Center Database") throw new CommandCenterError("Use the dedicated WHS Command Center Database spreadsheet.");
+  // The owner-configured ID is authoritative. A spreadsheet's display title is
+  // mutable and must not prevent initializing its dedicated Notes History tab.
   const sheet = data.sheets?.find((s: { properties: { title: string } }) => s.properties.title === TAB);
   if (!sheet) {
     try { await request(":batchUpdate", { requests: [{ addSheet: { properties: { title: TAB, gridProperties: { columnCount: 12, frozenRowCount: 1 } } } }] }); }

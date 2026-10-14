@@ -6,8 +6,9 @@ import styles from "./command-center.module.css";
 
 const API = "/api/owner/command-center";
 async function call(body?: object) {
-  const response = await fetch(API, { method: body ? "POST" : "GET", cache: "no-store", headers: body ? { "Content-Type": "application/json" } : undefined, body: body ? JSON.stringify(body) : undefined });
-  const data = await response.json();
+  const response = await fetch(API, { method: body ? "POST" : "GET", cache: "no-store", signal: AbortSignal.timeout(45000), headers: body ? { "Content-Type": "application/json" } : undefined, body: body ? JSON.stringify(body) : undefined });
+  let data;
+  try { data = await response.json(); } catch { throw new Error("Could not reach Command Center. Your draft is preserved; please retry."); }
   if (!response.ok || !data.ok) throw new Error(data.message || "Could not reach Command Center. Please retry.");
   return data;
 }
@@ -26,18 +27,20 @@ export function CommandCenter() {
     event.preventDefault();
     if (submitting.current || !original.trim()) return;
     submitting.current = true; setBusy(true); setError(""); setNotice("");
-    if (!saveKey.current || saveKey.current.original !== original) saveKey.current = { id: crypto.randomUUID(), original };
-    const payload = saveKey.current;
-    let saved = false;
     try {
-      await call({ action: "save", ...payload });
-      saved = true; setOriginal(""); saveKey.current = null;
-      setNotice("Note saved. Organizing it now…");
-      const result = await call({ action: "interpret", id: payload.id });
-      setNotice(result.message); await reload();
+      if (!saveKey.current || saveKey.current.original !== original) saveKey.current = { id: crypto.randomUUID(), original };
+      const payload = saveKey.current;
+      const result = await call({ action: "save", ...payload });
+      setNotes(current => [result.note, ...current.filter(note => note.id !== result.note.id)]);
+      setOriginal(""); saveKey.current = null;
+      setNotice("Saved. Your original note is in Notes History.");
+      // The save is finished. AI and refresh are optional background work and
+      // cannot withhold confirmation, the saved row, or release of the button.
+      void call({ action: "interpret", id: payload.id }).then(() => reload()).catch(() => {
+        // Original remains visible; its Retry AI processing action stays usable.
+      });
     } catch (e) {
-      setError(saved ? "Your original note is saved. Organization or refresh failed; refresh and retry AI processing later." : (e instanceof Error ? e.message : "Save failed. Your draft is still here."));
-      if (saved) { try { await reload(); } catch { /* Preserve save confirmation. */ } }
+      setError(e instanceof Error && e.name !== "TimeoutError" && e.name !== "AbortError" ? e.message : "Save could not be confirmed. Your draft is preserved; retrying will not create a duplicate.");
     } finally { setBusy(false); submitting.current = false; }
   }
   async function action(id: string, action: "complete" | "interpret") {
@@ -69,9 +72,11 @@ export function CommandCenter() {
       <label htmlFor="command-center-note">Your note</label>
       <textarea id="command-center-note" rows={7} maxLength={40000} value={original} disabled={busy} onChange={e => setOriginal(e.target.value)} placeholder="A client to follow up with, something to remember, or an idea for later…" required />
       <div className={styles.actions}><button className="button button--primary" disabled={busy || !original.trim()} type="submit">{busy ? "Working…" : "Save Note"}</button><span>Dates use Pacific time.</span></div>
+      {busy ? <p role="status">Saving your note…</p> : null}
+      {notice ? <p role="status" className={styles.success}>{notice}</p> : null}
+      {error ? <p role="alert" className={styles.error}>{error}</p> : null}
     </form>
-    {notice ? <p role="status" className={styles.success}>{notice}</p> : null}
-    {error ? <div role="alert" className={styles.error}><p>{error}</p><button type="button" disabled={busy} onClick={() => { setError(""); reload().catch(e => setError(e.message)); }}>Refresh notes</button></div> : null}
+    {error ? <button type="button" disabled={busy} onClick={() => { setError(""); reload().catch(e => setError(e.message)); }}>Refresh notes</button> : null}
     {loading ? <p role="status">Loading notes…</p> : <>
       <div className={styles.columns}>
         <section><h3>Overdue</h3>{cards(groups.overdue, "No overdue follow-ups.")}</section>

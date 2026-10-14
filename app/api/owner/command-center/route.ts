@@ -28,9 +28,9 @@ export async function POST(request: Request) {
     const id = body.id!;
     if (body.action === "save") {
       if (typeof body.original !== "string" || !body.original.trim() || body.original.length > 40000) return json({ ok: false, message: "Enter a note of 1–40,000 characters." }, 400);
-      await saveOriginal(id, body.original);
+      const note = await saveOriginal(id, body.original);
       // Return durable save confirmation before attempting optional AI processing.
-      return json({ ok: true, message: "Note saved." });
+      return json({ ok: true, message: "Saved.", note });
     }
     if (body.action === "complete") { await completeNote(id); return json({ ok: true, message: "Note marked complete." }); }
     if (body.action === "interpret") {

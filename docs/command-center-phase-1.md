@@ -25,7 +25,8 @@ An ID reused with different text is rejected. Literal string cells preserve
 whitespace, line breaks, and formula-like note text without executing it.
 
 Empty Notes History storage is initialized only inside the explicitly configured
-spreadsheet with title WHS Command Center Database. Nonempty mismatched headers
+spreadsheet identified by COMMAND_CENTER_SPREADSHEET_ID. Its display title may
+be renamed without breaking storage. Nonempty mismatched headers
 fail closed. Existing operational/historical spreadsheet IDs are rejected as
 Command Center storage. Do not remove the CC named ranges: they are durable
 idempotency receipts, not user data columns.
