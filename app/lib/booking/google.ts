@@ -129,9 +129,11 @@ export async function getCalendarBusyWindows(
   }
 
   const payload = (await response.json()) as {
-    calendars?: Record<string, { busy?: BusyWindow[] }>;
+    calendars?: Record<string, { busy?: BusyWindow[]; errors?: unknown[] }>;
   };
-  return payload.calendars?.[calendarId]?.busy ?? [];
+  const calendar=payload.calendars?.[calendarId];
+  if(!calendar || calendar.errors?.length || !Array.isArray(calendar.busy))throw new Error("Calendar availability could not be verified.");
+  return calendar.busy;
 }
 
 export async function appendLeadToSheet(leadId: string, lead: NormalizedLead) {
@@ -1472,4 +1474,35 @@ async function appendHistoricalJob(
       `Historical Google Sheets append failed with ${response.status}: ${await response.text()}`,
     );
   }
+}
+
+// AI bridge uses an atomic unique Sheets receipt + append. Never remove these
+// named ranges: they prevent duplicate requests after retries or lost responses.
+export async function appendAiPricerLead(leadId:string,lead:NormalizedLead,metadata:string) {
+  const existing=await getLeadById(leadId);if(existing)return existing;
+  const spreadsheetId=requireSpreadsheetId(),sheetName=process.env.GOOGLE_SHEET_TAB||'Open Leads';
+  const token=await getGoogleAccessToken([SHEETS_SCOPE]);
+  const headers=await getSheetHeaders(spreadsheetId,sheetName,token);
+  // Do not rewrite live header schemas during an integration handoff.
+  if(REQUIRED_SHEET_COLUMNS.some(h=>!headers.includes(h)))throw new Error('Booking sheet schema requires preparation.');
+  const row=mapLeadToColumns(leadId,lead,headers);
+  row[headers.indexOf('Appointment Type')]='AI Price / Estimate';
+  row[headers.indexOf('Source')]='AI Pricer';
+  row[headers.indexOf('Project Description')]=lead.projectDescription;
+  row[headers.indexOf('Internal Notes')]=metadata;
+  const base=`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}`;
+  const response=await fetch(`${base}?fields=sheets(properties(sheetId,title))`,{headers:{Authorization:`Bearer ${token}`},cache:'no-store'});
+  if(!response.ok)throw new Error('Booking sheet unavailable.');
+  const tabs=await response.json() as {sheets:{properties:{sheetId:number;title:string}}[]};
+  const sheet=tabs.sheets.find(s=>s.properties.title===sheetName);if(!sheet)throw new Error('Booking sheet unavailable.');
+  const receipt=leadId.replaceAll('-','_');
+  const write=await fetch(`${base}:batchUpdate`,{method:'POST',headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/json'},body:JSON.stringify({requests:[
+    {addNamedRange:{namedRange:{namedRangeId:`ai_${receipt}`,name:`AI_${receipt}`,range:{sheetId:sheet.properties.sheetId,startRowIndex:0,endRowIndex:1,startColumnIndex:0,endColumnIndex:1}}}},
+    {appendCells:{sheetId:sheet.properties.sheetId,rows:[{values:row.map(stringValue=>({userEnteredValue:{stringValue}}))}],fields:'userEnteredValue'}}
+  ]})});
+  // Reconcile the authoritative row after both success and a duplicate receipt.
+  const saved=await getLeadById(leadId);
+  if(saved)return saved;
+  if(!write.ok)throw new Error('Booking request could not be saved. Retry the same request.');
+  throw new Error('Booking receipt could not be verified. Retry the same request.');
 }
