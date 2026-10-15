@@ -88,3 +88,30 @@ exact retry and pending receipt with mocked network; no live AI needed.
 Browser/runtime verification and native iPhone remain explicit gates unless a
 subsequent result below records them as passed. A build alone is insufficient.
 Production integration needs approval after Preview review. Phases 3–4 unchanged.
+
+## Current delivery status (2026-10-15)
+
+Pricer draft PR: https://github.com/TristanWadeWHS/whs-pricing-tool/pull/24.
+Website draft PR: https://github.com/TristanWadeWHS/WadeHomeServicesWebsite/pull/3.
+Pricer tests: 342 passed, one opt-in skip (full run with maxWorkers=2 after
+parallel PGlite timeouts). New private photo ordering/immutable storage tests
+also passed. Website tests: 54 passed. Both TypeScript checks and local Next
+production builds passed. No real booking, notification, Calendar write or live
+AI call was made. Neither app is merged or promoted.
+
+End-to-end verification is BLOCKED. Vercel create_deployment returned 403 for
+project prj_DWYUygmqzTKzzjqDeNkxwUczJOls (wade-home-services-push): no permission
+to create a Preview Deployment. The supported CLI fallback used that exact
+team/project with target=preview and failed with no existing credentials.
+Git-created candidates remain queued; no READY paired candidate is certified.
+Local browser installation also failed because downloads were truncated; the
+updated desktop/mobile smoke script has not run in this environment.
+
+Branch-only shared secret and verified branch-alias origins are configured;
+PRICER_BOOKING_ENABLED is reset to false in both feature-branch Preview configs.
+To finish: restore website Preview deployment permission, deploy both reviewed
+branches with booking enabled only in that Preview, verify actual availability,
+synthetic request + private photo transfer + one durable row on retries, then
+owner portal fields and iPhone form. Use synthetic data; do not approve a live
+appointment or send customer messages during verification. Production release
+still requires separate owner approval.
