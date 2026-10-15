@@ -9,7 +9,7 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "test": "node --import tsx --test tests/booking-logic.test.mjs tests/command-center.test.mjs",
+    "test": "node --import tsx --test tests/booking-logic.test.mjs tests/command-center.test.mjs tests/ai-pricer-booking.test.mjs",
     "lint": "eslint . --ignore-pattern .next"
   },
   "dependencies": {

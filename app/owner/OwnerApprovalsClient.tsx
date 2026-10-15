@@ -154,6 +154,8 @@ function OwnerLeadCard({
         <div><dt>Requested Time</dt><dd>{lead.requestedDate} / {lead.requestedTime}</dd></div>
         <div><dt>Photo References</dt><dd><LeadPhotos lead={lead} /></dd></div>
         <div><dt>Description</dt><dd>{lead.projectDescription}</dd></div>
+        <div><dt>Access Notes</dt><dd>{lead.accessNotes || 'None'}</dd></div>
+        {lead.source==='AI Pricer' && <AiEstimateDetails notes={lead.internalNotes} />}
       </dl>
 
       {isFinal ? null : (
@@ -280,3 +282,12 @@ function decisionPayloadLead(
   return null;
 }
 
+
+function AiEstimateDetails({notes}:{notes:string}) {
+  try {const data=JSON.parse(notes.split('\n')[0]);
+    return <><div><dt>AI Submission ID</dt><dd>{String(data.estimateId||'')}</dd></div>
+      <div><dt>Original AI Quote (provisional)</dt><dd>{String(data.originalQuote?.displayed?.amount||'See estimate history')}</dd></div>
+      <div><dt>Confirmed Scope</dt><dd>{Array.isArray(data.confirmedScope)?data.confirmedScope.join(', '):''}</dd></div>
+      <div><dt>Special Notes</dt><dd>{String(data.specialNotes||'None')}</dd></div></>;
+  }catch{return <div><dt>AI Estimate</dt><dd>See linked inquiry history.</dd></div>;}
+}
