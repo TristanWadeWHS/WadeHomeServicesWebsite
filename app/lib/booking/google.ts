@@ -1,3 +1,4 @@
+import { replaceOwnerNotes } from '../ai-booking-metadata';
 import {
   APPOINTMENT_TYPES,
   APPROVED_STATUS,
@@ -572,7 +573,7 @@ export async function updateActiveJobField(
 
   const timestamp = new Date().toISOString();
   const column = jobEditColumn(field);
-  const internalNotes = field === "internalNotes" ? validated.value : lead.internalNotes;
+  const internalNotes = field === "internalNotes" ? replaceOwnerNotes(lead.source, lead.internalNotes, validated.value) : lead.internalNotes;
   const updated = await updateLeadColumns(lead, {
     [column]: validated.value,
     "Audit Trail": appendAuditEntry(

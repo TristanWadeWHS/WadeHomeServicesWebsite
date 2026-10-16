@@ -286,6 +286,8 @@ function decisionPayloadLead(
 function AiEstimateDetails({notes}:{notes:string}) {
   try {const data=JSON.parse(notes.split('\n')[0]);
     return <><div><dt>AI Submission ID</dt><dd>{String(data.estimateId||'')}</dd></div>
+      <div><dt>AI Request ID</dt><dd>{String(data.requestId||'See estimate history')}</dd></div>
+      <div><dt>Estimate Revision</dt><dd>{String(data.quoteRevision||'')}</dd></div>
       <div><dt>Original AI Quote (provisional)</dt><dd>{String(data.originalQuote?.displayed?.amount||'See estimate history')}</dd></div>
       <div><dt>Confirmed Scope</dt><dd>{Array.isArray(data.confirmedScope)?data.confirmedScope.join(', '):''}</dd></div>
       <div><dt>Special Notes</dt><dd>{String(data.specialNotes||'None')}</dd></div></>;

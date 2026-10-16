@@ -5,6 +5,7 @@ import { appendAiPricerLead, getCalendarBusyWindows, getLeadById, googleConfigur
 import { buildAvailabilitySlotsForDate, calendarQueryRangeForDate } from './booking/scheduling';
 import { validateSubmission } from './booking/validation';
 import type { NormalizedLead, PhotoReference } from './booking/types';
+import { aiBookingMetadata } from './ai-booking-metadata';
 export function validateAiPayload(value:unknown):AiBookingPayload {
   if(!value||typeof value!=='object')throw new Error('Invalid request.');
   const p=value as AiBookingPayload;
@@ -43,11 +44,26 @@ async function copyPhotos(p:AiBookingPayload,leadId:string):Promise<PhotoReferen
   // pricer objects are read-only. Deterministic paths make retries safe.
   return photos;
 }
-function receipt(lead:{leadId:string;requestedTime:string}){return {ok:true,pending:true,leadId:lead.leadId,requestedTime:lead.requestedTime};}
+function canonical(value:unknown):unknown {
+  if(Array.isArray(value))return value.map(canonical);
+  if(value && typeof value==='object')return Object.fromEntries(Object.entries(value).sort(([a],[b])=>a.localeCompare(b)).map(([k,v])=>[k,canonical(v)]));
+  return value;
+}
+function payloadHash(p:AiBookingPayload) { return createHash('sha256').update(JSON.stringify(canonical(p))).digest('hex'); }
+function receipt(lead:{leadId:string;requestedTime:string;status:string;internalNotes:string},p:AiBookingPayload){
+  const metadata=aiBookingMetadata(lead.internalNotes);
+  if(metadata?.payloadHash!==payloadHash(p)||metadata?.requestId!==p.requestId)
+    return {status:409,body:{error:'An existing request has different details. Contact WHS; no new request was created.'}};
+  if(lead.status!=='Pending Approval')return {status:409,body:{error:'This request has already been reviewed. Contact WHS for its current status.'}};
+  return {status:200,body:{ok:true,pending:true,leadId:lead.leadId,requestId:p.requestId,requestedTime:lead.requestedTime}};
+}
 export async function submitAiBooking(p:AiBookingPayload) {
+  // Controlled shared-service testing only. No browser flag can enable writes.
+  if(process.env.VERCEL_ENV!=='preview'||process.env.AI_PRICER_SYNTHETIC_TEST_MODE!=='true')throw new Error('Synthetic Preview booking is not enabled.');
+  if(!p.customer.name.startsWith('TEST \u2014 WHS AI Pricer'))throw new Error('Use the required synthetic test label.');
   if(!googleConfigured())throw new Error('Booking unavailable.');
   const leadId=aiLeadId(p.estimateId),existing=await getLeadById(leadId);
-  if(existing)return {status:200,body:receipt(existing)};
+  if(existing)return receipt(existing,p);
   const date=new Intl.DateTimeFormat('en-CA',{timeZone:'America/Los_Angeles',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date(p.requestedSlot.start));
   const range=calendarQueryRangeForDate(date);if(!range)throw new Error('Invalid date.');
   const busy=await getCalendarBusyWindows(range.timeMin,range.timeMax);
@@ -57,7 +73,7 @@ export async function submitAiBooking(p:AiBookingPayload) {
   const validation=validateSubmission({services:p.services,appointmentType:'Service Appointment Request',address:p.address,projectDescription:'AI pricer confirmed scope',customer:p.customer,requestedSlot:slot,photos,startedAt:Date.now()-5000});
   if(!validation.ok)throw new Error('Invalid booking.');
   const lead:NormalizedLead={...validation.value,projectDescription:p.projectDescription};
-  const metadata=JSON.stringify({source:'AI Pricer',estimateId:p.estimateId,quoteRevision:p.quoteRevision,originalQuote:JSON.parse(p.originalQuote),selectedServices:p.selectedServices,confirmedScope:p.confirmedScope,specialNotes:p.notes,payloadHash:createHash('sha256').update(JSON.stringify(p)).digest('hex')});
+  const metadata=JSON.stringify({source:'AI Pricer',synthetic:true,requestId:p.requestId,estimateId:p.estimateId,quoteRevision:p.quoteRevision,originalQuote:JSON.parse(p.originalQuote),selectedServices:p.selectedServices,confirmedScope:p.confirmedScope,specialNotes:p.notes,payloadHash:payloadHash(p)});
   const saved=await appendAiPricerLead(leadId,lead,metadata);
-  return {status:200,body:receipt(saved)};
+  return receipt(saved,p);
 }
