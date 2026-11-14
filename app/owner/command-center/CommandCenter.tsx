@@ -25,6 +25,9 @@ export function CommandCenter() {
   const [followUpDate, setFollowUpDate] = useState("");
   const [digestInfo, setDigestInfo] = useState<{ configured: boolean; recipientCount: number; latestReceipt: { date: string; status: string; sentAt: string } | null } | null>(null);
   const [digestBusy, setDigestBusy] = useState(false);
+  const [digestMode, setDigestMode] = useState<"send" | "test">("send");
+  const digestInFlight = useRef(false);
+  const testEmailKey = useRef<string | null>(null);
   const [digestMessage, setDigestMessage] = useState("");
   const [digestError, setDigestError] = useState("");
   const [notes, setNotes] = useState<Note[]>([]);
@@ -47,15 +50,18 @@ export function CommandCenter() {
     call(undefined, `${API}/digest`).then(data => { if (active) setDigestInfo(data); }).catch(() => { if (active) setDigestError("Daily email status is unavailable."); });
     return () => { active = false; };
   }, []);
-  async function sendDigest() {
-    if (digestBusy) return;
+  async function sendDigest(test = false) {
+    if (digestInFlight.current) return;
+    digestInFlight.current = true; setDigestMode(test ? "test" : "send");
     setDigestBusy(true); setDigestError(""); setDigestMessage("");
     try {
-      const result = await call({}, `${API}/digest`);
+      if (test && !testEmailKey.current) testEmailKey.current = crypto.randomUUID();
+      const result = await call(test ? { action: "test", requestId: testEmailKey.current } : { action: "send" }, `${API}/digest`);
+      if (test) testEmailKey.current = null;
       setDigestMessage(result.message);
       setDigestInfo(await call(undefined, `${API}/digest`));
     } catch (error) { setDigestError(error instanceof Error ? error.message : "Could not send today's digest."); }
-    finally { setDigestBusy(false); }
+    finally { setDigestBusy(false); digestInFlight.current = false; }
   }
   async function save(event: React.FormEvent) {
     event.preventDefault();
@@ -148,8 +154,11 @@ export function CommandCenter() {
       <p>8 AM Pacific · High priorities, overdue and next-seven-day follow-ups, and notes open longer than two weeks.</p>
       {digestInfo ? <p>{digestInfo.configured ? `Configured for ${digestInfo.recipientCount} recipient${digestInfo.recipientCount === 1 ? "" : "s"}.` : "Daily email needs setup before delivery can begin."}</p> : null}
       {digestInfo?.latestReceipt ? <p>Latest delivery: {digestInfo.latestReceipt.date} · {digestInfo.latestReceipt.status === "Sent" ? "Accepted by email service" : digestInfo.latestReceipt.status}</p> : null}
-      <button type="button" className={`button ${styles.retryButton}`} disabled={digestBusy || !digestInfo?.configured} onClick={() => void sendDigest()}>{digestBusy ? "Sending digest…" : "Send Today's Digest Now"}</button>
-      <p>Sending now uses today's daily email slot. Repeat requests will not send another copy.</p>
+      <div className={styles.actions}>
+        <button type="button" className={`button ${styles.retryButton}`} disabled={digestBusy || !digestInfo?.configured} onClick={() => void sendDigest()}>{digestBusy && digestMode === "send" ? "Sending digest…" : "Send Today's Digest Now"}</button>
+        <button type="button" className={`button ${styles.retryButton}`} disabled={digestBusy || !digestInfo?.configured} onClick={() => void sendDigest(true)}>{digestBusy && digestMode === "test" ? "Sending test…" : "Send Test Email"}</button>
+      </div>
+      <p>The daily send uses today's email slot. Test emails are labeled TEST and do not change the daily schedule.</p>
       {digestMessage ? <p role="status" className={styles.success}>{digestMessage}</p> : null}
       {digestError ? <p role="alert" className={styles.error}>{digestError}</p> : null}
     </section>

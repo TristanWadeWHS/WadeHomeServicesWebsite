@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { generateKeyPairSync } from "node:crypto";
+import { generateKeyPairSync, randomUUID } from "node:crypto";
 import { HEADERS, fromRow, toRow } from "../app/lib/command-center/model.ts";
 import { selectDigest, digestDueNow, digestRecipients, buildDigestPayload } from "../app/lib/command-center/digest.ts";
-import { sendDailyDigest } from "../app/lib/command-center/send-digest.ts";
+import { sendDailyDigest, sendTestDigest } from "../app/lib/command-center/send-digest.ts";
 import { claimDailyDigest } from "../app/lib/command-center/digest-store.ts";
 import { GET as cron } from "../app/api/cron/command-center-digest/route.ts";
 import { GET as status, POST as manual } from "../app/api/owner/command-center/digest/route.ts";
@@ -130,4 +130,19 @@ test("configuration, production, cron credentials and owner/origin guards fail c
   process.env.VERCEL_ENV = "production"; process.env.COMMAND_CENTER_DIGEST_EMAILS = "";
   await assert.rejects(sendDailyDigest(now), /approved recipient/);
   assert.equal(state.providerCalls, 0); assert.equal(state.tables[8].length, 0);
+}));
+
+test("explicit test emails use the authenticated sender without altering the daily receipt", () => fixture(async state => {
+  await sendDailyDigest(now);
+  const savedReceipts = structuredClone(state.tables[8]);
+  const requestId = randomUUID();
+  const testResult = await sendTestDigest(requestId, now);
+  assert.equal(testResult.sent, true); assert.equal(state.providerCalls, 2);
+  assert.match(state.payload.subject, /^\[TEST\]/);
+  assert.equal(state.payload.sender.email, "hello@wadehomeservices.com");
+  assert.equal(state.payload.replyTo.email, "wadehomeservices@yahoo.com");
+  assert.equal(state.payload.to.length, 3); assert.equal(state.payload.headers.IdempotencyKey, requestId);
+  assert.deepEqual(state.tables[8], savedReceipts);
+  await sendTestDigest(requestId, now); assert.equal(state.payload.headers.IdempotencyKey, requestId, "Retries keep the provider duplicate-protection key");
+  await assert.rejects(sendTestDigest("invalid", now), /Invalid test email/);
 }));
