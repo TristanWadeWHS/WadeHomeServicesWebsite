@@ -63,7 +63,7 @@ export function CommandCenter() {
     return items.length ? items.map(note => (
       <article className={styles.card} key={note.id}>
         <div className={styles.meta}><span className={note.priority === "Urgent" || note.priority === "High" ? styles.important : undefined}>{note.priority || "Normal"} priority</span><span>{displayTime(note.timestamp)} PT</span></div>
-        <h4>{note.type === "Unprocessed" ? "General note" : note.type || "General note"}{note.clientName ? ` · ${note.clientName}` : ""}</h4>
+        <h4>{note.clientName.trim() || "No client name"}</h4>
         <p className={styles.original}>{note.original}</p>
         <p>{note.completedAt || note.status === "Completed" ? "Completed" : note.followUp === "Yes" ? `Follow up: ${note.followUpDate || "Choose a date"}` : "Saved · No follow-up scheduled"}</p>
         {note.summary ? <details><summary>AI summary</summary><p>{note.summary}</p></details> : null}
