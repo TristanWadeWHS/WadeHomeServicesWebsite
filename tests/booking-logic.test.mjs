@@ -796,9 +796,11 @@ test("Brevo owner notification payload includes required lead details and no cus
     "owner@example.com",
   );
   const combinedContent = `${payload.htmlContent}\n${payload.textContent}`;
+  assert.equal(payload.sender.email, "hello@wadehomeservices.com");
+  assert.equal(payload.replyTo.email, "wadehomeservices@yahoo.com");
 
   assert.deepEqual(payload.sender, {
-    email: "WadeHomeServices@yahoo.com",
+    email: "hello@wadehomeservices.com",
     name: "Wade Home Services",
   });
   assert.deepEqual(payload.to, [{ email: "owner@example.com" }]);
@@ -850,6 +852,8 @@ test("Brevo customer confirmation payload includes confirmed appointment details
   });
   const payload = buildCustomerConfirmationPayload(lead);
   const combinedContent = `${payload.htmlContent}\n${payload.textContent}`;
+  assert.equal(payload.sender.email, "hello@wadehomeservices.com");
+  assert.equal(payload.replyTo.email, "wadehomeservices@yahoo.com");
 
   assert.deepEqual(payload.to, [{
     email: "customer-confirmation@example.com",

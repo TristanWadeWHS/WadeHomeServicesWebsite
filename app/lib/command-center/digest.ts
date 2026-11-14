@@ -1,3 +1,4 @@
+import { EMAIL_SENDER, EMAIL_REPLY_TO } from "../email/identity";
 import { createHash } from "node:crypto";
 import { localDate, TIMEZONE, validDate, type Note } from "./model";
 
@@ -48,5 +49,5 @@ export function buildDigestPayload(notes: Note[], recipients: string[], now = ne
   // A stable provider idempotency key supplements the durable daily receipt.
   const hash = createHash("sha256").update(`whs-command-digest:${date}`).digest("hex");
   const key = `${hash.slice(0, 8)}-${hash.slice(8, 12)}-4${hash.slice(13, 16)}-8${hash.slice(17, 20)}-${hash.slice(20, 32)}`;
-  return { sender: { email: "WadeHomeServices@yahoo.com", name: "Wade Home Services" }, to: recipients.map(email => ({ email })), subject: `WHS Daily Priorities · ${date} · ${count} open items`, htmlContent, textContent, tags: ["command-center-daily-digest"], headers: { IdempotencyKey: key } };
+  return { sender: EMAIL_SENDER, replyTo: EMAIL_REPLY_TO, to: recipients.map(email => ({ email })), subject: `WHS Daily Priorities · ${date} · ${count} open items`, htmlContent, textContent, tags: ["command-center-daily-digest"], headers: { IdempotencyKey: key } };
 }

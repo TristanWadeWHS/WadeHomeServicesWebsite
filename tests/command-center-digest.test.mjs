@@ -39,6 +39,7 @@ test("email rendering escapes note content, labels aging accurately, and validat
   for (const value of ["", "one@example.test,not-an-email", "a@b.test\r\nBcc: thief@example.test"]) assert.throws(() => digestRecipients(value));
   const p = buildDigestPayload([note("malicious", { clientName: '<img src="bad">', original: "<script>alert(1)</script>", priority: "High", followUp: "Yes", followUpDate: "2026-11-01", timestamp: "2026-10-01T10:00:00-07:00" })], recipients, now);
   assert.ok(!p.htmlContent.includes("<script>")); assert.ok(p.htmlContent.includes("&lt;script&gt;")); assert.ok(p.htmlContent.includes("OVERDUE")); assert.match(p.textContent, /Open 44 days/);
+  assert.equal(p.sender.email, "hello@wadehomeservices.com"); assert.equal(p.replyTo.email, "wadehomeservices@yahoo.com");
   assert.equal(p.to.length, 2); assert.ok(p.textContent.includes("does not confirm a client has failed to respond"));
   assert.equal(p.headers.IdempotencyKey, buildDigestPayload([], recipients, now).headers.IdempotencyKey);
   assert.match(buildDigestPayload([], recipients, now).textContent, /No high priorities/);
