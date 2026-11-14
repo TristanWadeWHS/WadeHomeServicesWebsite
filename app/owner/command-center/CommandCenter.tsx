@@ -9,7 +9,7 @@ function displayTime(value: string) {
   return Number.isNaN(date.getTime()) ? value : new Intl.DateTimeFormat("en-US", { timeZone: "America/Los_Angeles", dateStyle: "medium", timeStyle: "short" }).format(date);
 }
 const API = "/api/owner/command-center";
-type NoteAction = "complete" | "interpret";
+type NoteAction = "complete" | "cancel";
 async function call(body?: object) {
   const response = await fetch(API, { method: body ? "POST" : "GET", cache: "no-store", signal: AbortSignal.timeout(45000), headers: body ? { "Content-Type": "application/json" } : undefined, body: body ? JSON.stringify(body) : undefined });
   let data;
@@ -27,6 +27,8 @@ export function CommandCenter() {
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [activeAction, setActiveAction] = useState<{ id: string; action: NoteAction } | null>(null);
+  const [cancellingId, setCancellingId] = useState<string | null>(null);
+  const [reason, setReason] = useState("");
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
   const submitting = useRef(false);
@@ -54,7 +56,9 @@ export function CommandCenter() {
   async function action(id: string, action: NoteAction) {
     if (submitting.current) return;
     submitting.current = true; setBusy(true); setActiveAction({ id, action }); setError(""); setNotice("");
-    try { const result = await call({ id, action }); setNotice(result.message); await reload(); }
+    try { const result = await call({ id, action, ...(action === "cancel" ? { reason } : {}) }); setNotice(result.message);
+      if (action === "cancel") { setCancellingId(null); setReason(""); }
+      await reload(); }
     catch (e) { setError(e instanceof Error ? e.message : "Update failed. Please retry."); }
     finally { submitting.current = false; setBusy(false); setActiveAction(null); }
   }
@@ -65,17 +69,24 @@ export function CommandCenter() {
         <div className={styles.meta}><span className={note.priority === "Urgent" || note.priority === "High" ? styles.important : undefined}>{note.priority || "Normal"} priority</span><span>{displayTime(note.timestamp)} PT</span></div>
         <h4>{note.clientName.trim() || "No client name"}</h4>
         <p className={styles.original}>{note.original}</p>
-        <p>{note.completedAt || note.status === "Completed" ? "Completed" : note.followUp === "Yes" ? `Follow up: ${note.followUpDate || "Choose a date"}` : "Saved · No follow-up scheduled"}</p>
+        <p>{note.status === "Cancelled" ? "Cancelled" : note.completedAt || note.status === "Completed" ? "Completed" : note.followUp === "Yes" ? `Follow up: ${note.followUpDate || "Choose a date"}` : "Saved · No follow-up scheduled"}</p>
         {note.summary ? <details><summary>AI summary</summary><p>{note.summary}</p></details> : null}
-        {note.completedAt ? <p>Completed {displayTime(note.completedAt)}</p> : null}
+        {note.completedAt ? <p>{note.status === "Cancelled" ? "Cancelled" : "Completed"} {displayTime(note.completedAt)}</p> : null}
+        {note.cancellationReason ? <p className={styles.original}><strong>Cancellation reason:</strong> {note.cancellationReason}</p> : null}
         <div className={styles.actions}>
-          {!note.completedAt && note.status !== "Completed" ? <button type="button" className={`button ${styles.completeButton}`} disabled={busy} aria-busy={activeAction?.id === note.id && activeAction.action === "complete"} onClick={() => action(note.id, "complete")}>
+          {!note.completedAt && note.status !== "Completed" && note.status !== "Cancelled" ? <button type="button" className={`button ${styles.completeButton}`} disabled={busy} aria-busy={activeAction?.id === note.id && activeAction.action === "complete"} onClick={() => action(note.id, "complete")}>
             <span className={styles.actionIcon} aria-hidden="true">✓</span>{activeAction?.id === note.id && activeAction.action === "complete" ? "Completing…" : "Mark Complete"}
           </button> : null}
-          {!note.summary && note.type === "Unprocessed" ? <button type="button" className={`button ${styles.retryButton}`} disabled={busy} aria-busy={activeAction?.id === note.id && activeAction.action === "interpret"} onClick={() => action(note.id, "interpret")}>
-            <span className={styles.actionIcon} aria-hidden="true">↻</span>{activeAction?.id === note.id && activeAction.action === "interpret" ? "Retrying AI…" : "Retry AI Processing"}
-          </button> : null}
+          {!note.completedAt && note.status !== "Completed" && note.status !== "Cancelled" ? <button type="button" className={`button ${styles.cancelButton}`} disabled={busy} onClick={() => { setCancellingId(note.id); setReason(""); setError(""); }}>Mark Cancelled</button> : null}
         </div>
+        {cancellingId === note.id ? <form className={styles.cancellation} onSubmit={event => { event.preventDefault(); void action(note.id, "cancel"); }}>
+          <label htmlFor={`cancel-reason-${note.id}`}>Why is this note being cancelled?</label>
+          <textarea autoFocus id={`cancel-reason-${note.id}`} value={reason} onChange={event => setReason(event.target.value)} maxLength={2000} rows={3} required disabled={busy} />
+          <div className={styles.actions}>
+            <button type="submit" className={`button ${styles.cancelButton}`} disabled={busy || !reason.trim()}>{activeAction?.action === "cancel" ? "Cancelling…" : "Confirm Cancellation"}</button>
+            <button type="button" className="button" disabled={busy} onClick={() => { setCancellingId(null); setReason(""); }}>Keep Note Open</button>
+          </div>
+        </form> : null}
       </article>
     )) : <p className={styles.empty}>{empty}</p>;
   }
@@ -103,6 +114,7 @@ export function CommandCenter() {
         <section><h3>Upcoming</h3><p>Today, future dates, and follow-ups awaiting a date.</p>{cards(groups.upcoming, "No upcoming follow-ups.")}</section>
       </div>
       <section><h3>General Notes</h3>{cards(groups.general, "No general notes yet.")}</section>
+      <details className={styles.history}><summary>Cancelled history</summary>{cards(groups.cancelled, "No cancelled notes yet.")}</details>
       <details className={styles.history}><summary>Completed history</summary>{cards(groups.completed, "No completed notes yet.")}</details>
     </>}
   </div>;

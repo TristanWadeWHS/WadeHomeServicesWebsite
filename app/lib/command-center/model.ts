@@ -1,11 +1,11 @@
-export const HEADERS = ["Note ID", "Timestamp", "Client Name", "Client ID", "Original Note", "AI Summary", "Note Type", "Priority", "Follow-Up Required", "Follow-Up Date", "Status", "Completed At"] as const;
+export const HEADERS = ["Note ID", "Timestamp", "Client Name", "Client ID", "Original Note", "AI Summary", "Note Type", "Priority", "Follow-Up Required", "Follow-Up Date", "Status", "Completed At", "Cancellation Reason"] as const;
 export const TIMEZONE = "America/Los_Angeles";
-export type Note = { id: string; timestamp: string; clientName: string; clientId: string; original: string; summary: string; type: string; priority: string; followUp: string; followUpDate: string; status: string; completedAt: string };
+export type Note = { id: string; timestamp: string; clientName: string; clientId: string; original: string; summary: string; type: string; priority: string; followUp: string; followUpDate: string; status: string; completedAt: string; cancellationReason: string };
 export function fromRow(row: string[]): Note {
-  const [id = "", timestamp = "", clientName = "", clientId = "", original = "", summary = "", type = "", priority = "", followUp = "", followUpDate = "", status = "", completedAt = ""] = row;
-  return { id, timestamp, clientName, clientId, original, summary, type, priority, followUp, followUpDate, status, completedAt };
+  const [id = "", timestamp = "", clientName = "", clientId = "", original = "", summary = "", type = "", priority = "", followUp = "", followUpDate = "", status = "", completedAt = "", cancellationReason = ""] = row;
+  return { id, timestamp, clientName, clientId, original, summary, type, priority, followUp, followUpDate, status, completedAt, cancellationReason };
 }
-export function toRow(n: Note): string[] { return [n.id, n.timestamp, n.clientName, n.clientId, n.original, n.summary, n.type, n.priority, n.followUp, n.followUpDate, n.status, n.completedAt]; }
+export function toRow(n: Note): string[] { return [n.id, n.timestamp, n.clientName, n.clientId, n.original, n.summary, n.type, n.priority, n.followUp, n.followUpDate, n.status, n.completedAt, n.cancellationReason]; }
 export function localDate(now = new Date()) { return new Intl.DateTimeFormat("en-CA", { timeZone: TIMEZONE, year: "numeric", month: "2-digit", day: "2-digit" }).format(now); }
 export function localTimestamp(now = new Date()) {
   const parts = new Intl.DateTimeFormat("en-CA", { timeZone: TIMEZONE, year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit", hourCycle: "h23", timeZoneName: "longOffset" }).formatToParts(now);
@@ -14,12 +14,13 @@ export function localTimestamp(now = new Date()) {
 }
 export function validDate(value: unknown): value is string { return typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value) && !Number.isNaN(Date.parse(value)) && new Date(value).toISOString().slice(0, 10) === value; }
 export function groupNotes(notes: Note[], today = localDate()) {
-  const pending = notes.filter(n => n.status !== "Completed" && !n.completedAt);
+  const pending = notes.filter(n => n.status !== "Completed" && n.status !== "Cancelled" && !n.completedAt);
   return {
     overdue: pending.filter(n => n.followUp === "Yes" && validDate(n.followUpDate) && n.followUpDate < today),
     upcoming: pending.filter(n => n.followUp === "Yes" && (!validDate(n.followUpDate) || n.followUpDate >= today)),
     general: pending.filter(n => n.followUp !== "Yes"),
-    completed: notes.filter(n => n.status === "Completed" || n.completedAt),
+    completed: notes.filter(n => n.status !== "Cancelled" && (n.status === "Completed" || n.completedAt)),
+    cancelled: notes.filter(n => n.status === "Cancelled"),
   };
 }
 export function resolveClientId(name: string, original: string, rows: string[][]) {
