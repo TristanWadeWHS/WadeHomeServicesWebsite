@@ -3,6 +3,8 @@ import { CommandCenterError, readNotes, saveOriginal, findNote, completeNote } f
 import { interpretNote } from "../../../lib/command-center/interpret";
 import { readJsonWithLimit } from "../../../lib/booking/security";
 
+import { validateDetails } from "../../../lib/command-center/model";
+
 export const runtime = "nodejs";
 export const maxDuration = 60;
 const json = (value: object, status = 200) => Response.json(value, { status, headers: { "Cache-Control": "no-store" } });
@@ -23,18 +25,23 @@ export async function POST(request: Request) {
   try {
     const parsed = await readJsonWithLimit(request, 250000);
     if (!parsed.ok) return json({ ok: false, message: parsed.message }, parsed.status);
-    const body = parsed.value as { id?: string; action?: string; original?: string } | null;
+    const body = parsed.value as { id?: string; action?: string; original?: string; details?: unknown } | null;
     if (!body || typeof body !== "object" || !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(body.id || "")) return json({ ok: false, message: "Invalid note save key." }, 400);
     const id = body.id!;
     if (body.action === "save") {
       if (typeof body.original !== "string" || !body.original.trim() || body.original.length > 40000) return json({ ok: false, message: "Enter a note of 1–40,000 characters." }, 400);
-      const note = await saveOriginal(id, body.original);
+      let details;
+      if (body.details !== undefined) {
+        try { details = validateDetails(body.details); } catch (error) { return json({ ok: false, message: (error as Error).message }, 400); }
+      }
+      const note = await saveOriginal(id, body.original, details);
       // Return durable save confirmation before attempting optional AI processing.
       return json({ ok: true, message: "Saved.", note });
     }
     if (body.action === "complete") { await completeNote(id); return json({ ok: true, message: "Note marked complete." }); }
     if (body.action === "interpret") {
       const { note } = await findNote(id);
+      if (note.type !== "Unprocessed" && !note.summary) return json({ ok: true, interpreted: false, message: "This note uses your saved details; no AI processing is needed." });
       const interpreted = await interpretNote(note);
       return json({ ok: true, interpreted, message: interpreted ? "Note organized." : "Original note saved. AI processing is pending; you can retry later." });
     }

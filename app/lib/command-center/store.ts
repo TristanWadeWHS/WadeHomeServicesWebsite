@@ -1,5 +1,5 @@
 import { getGoogleAccessToken, HISTORICAL_SPREADSHEET_ID } from "../booking/google";
-import { HEADERS, fromRow, toRow, localTimestamp, type Note } from "./model";
+import { HEADERS, fromRow, toRow, localTimestamp, type Note, type NoteDetails } from "./model";
 
 const TAB = "Notes History";
 export class CommandCenterError extends Error { constructor(message: string, public status = 503) { super(message); } }
@@ -50,15 +50,17 @@ async function sheetId() {
   }
   return sheet.properties.sheetId as number;
 }
-export async function saveOriginal(id: string, original: string) {
+export async function saveOriginal(id: string, original: string, details?: NoteDetails) {
   const notes = await readNotes();
   const existing = notes.find(n => n.id === id);
   if (existing) {
-    if (existing.original !== original) throw new CommandCenterError("This save key belongs to a different note. Reload before saving another note.", 409);
+    if (existing.original !== original || (details && (existing.clientName !== details.clientName || existing.type !== details.type || existing.priority !== details.priority || existing.followUpDate !== details.followUpDate))) throw new CommandCenterError("This save key belongs to a different note. Reload before saving another note.", 409);
     return existing;
   }
   const tabId = await sheetId();
-  const note = fromRow([id, localTimestamp(), "", "", original, "", "Unprocessed", "Normal", "Unknown", "", "Pending", ""]);
+  const note = details
+    ? fromRow([id, localTimestamp(), details.clientName, "", original, "", details.type, details.priority, details.followUpDate ? "Yes" : "No", details.followUpDate, details.followUpDate ? "Pending" : "Noted", ""])
+    : fromRow([id, localTimestamp(), "", "", original, "", "Unprocessed", "Normal", "Unknown", "", "Pending", ""]);
   try {
     // Atomic unique receipt + append. A concurrent retry cannot append without
     // creating the same namedRangeId; Sheets rejects that entire duplicate batch.
@@ -70,7 +72,7 @@ export async function saveOriginal(id: string, original: string) {
   } catch (error) {
     // Reconcile duplicate responses and lost acknowledgements with persisted data.
     const saved = (await readNotes()).find(n => n.id === id);
-    if (saved?.original === original) return saved;
+    if (saved?.original === original && (!details || (saved.clientName === details.clientName && saved.type === details.type && saved.priority === details.priority && saved.followUpDate === details.followUpDate))) return saved;
     if (saved) throw new CommandCenterError("This save key belongs to a different note.", 409);
     throw error;
   }
