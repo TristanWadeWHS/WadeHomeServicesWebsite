@@ -1,6 +1,7 @@
 import { requireRole, ROLE_OWNER, isSameOriginRequest } from "../../../../lib/booking/ownerAuth";
 import { latestDigestReceipt } from "../../../../lib/command-center/digest-store";
-import { sendDailyDigest } from "../../../../lib/command-center/send-digest";
+import { readJsonWithLimit } from "../../../../lib/booking/security";
+import { sendDailyDigest, sendTestDigest } from "../../../../lib/command-center/send-digest";
 import { digestRecipients } from "../../../../lib/command-center/digest";
 import { CommandCenterError } from "../../../../lib/command-center/store";
 
@@ -21,7 +22,15 @@ export async function GET(request: Request) {
 }
 export async function POST(request: Request) {
   const denied = authorize(request); if (denied) return denied;
-  try { return json({ ok: true, ...await sendDailyDigest() }); }
+  try {
+    const parsed = await readJsonWithLimit(request, 4096);
+    if (!parsed.ok) return json({ ok: false, message: parsed.message }, parsed.status);
+    const body = parsed.value as { action?: string; requestId?: unknown } | null;
+    if (!body || typeof body !== "object" || Array.isArray(body)) return json({ ok: false, message: "Invalid digest request." }, 400);
+    if (body.action === "test") return json({ ok: true, ...await sendTestDigest(body.requestId) });
+    if (body.action && body.action !== "send") return json({ ok: false, message: "Unknown digest action." }, 400);
+    return json({ ok: true, ...await sendDailyDigest() });
+  }
   catch (error) {
     console.error("command-center.digest.manual", { status: error instanceof CommandCenterError ? error.status : 503 });
     return json({ ok: false, message: error instanceof CommandCenterError ? error.message : "Could not send the daily digest." }, error instanceof CommandCenterError ? error.status : 503);
