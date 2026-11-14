@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { generateKeyPairSync, randomUUID } from "node:crypto";
 import { HEADERS, localDate, localTimestamp, fromRow, groupNotes, validateDetails, resolveClientId } from "../app/lib/command-center/model.ts";
-import { saveOriginal, completeNote, saveInterpretation, readNotes } from "../app/lib/command-center/store.ts";
+import { saveOriginal, completeNote, cancelNote, saveInterpretation, readNotes } from "../app/lib/command-center/store.ts";
 import { interpretNote, validateInterpretation } from "../app/lib/command-center/interpret.ts";
 import { GET, POST } from "../app/api/owner/command-center/route.ts";
 import { createOperationsSession, ROLE_OWNER, ROLE_FIELD_MANAGER, OPERATIONS_SESSION_COOKIE, OPERATIONS_SESSION_ACTIVE_COOKIE } from "../app/lib/booking/ownerAuth.ts";
@@ -41,7 +41,7 @@ test("API/storage: durable save, atomic retries, AI failure, completion, RBAC an
   process.env.OWNER_APPROVAL_TOKEN = "fixture-owner-token";
   process.env.FIELD_MANAGER_ACCESS_TOKEN = "fixture-manager-token";
   process.env.OPENAI_API_KEY = "fixture-ai-key";
-  let rows = [[...HEADERS]]; const receipts = new Set(); let aiFails = true; let aiPrompt; let loseAcknowledgement = false; let missingSheet = false;
+  let gridColumns = 12; let rows = [[...HEADERS]]; const receipts = new Set(); let aiFails = true; let aiPrompt; let loseAcknowledgement = false; let missingSheet = false;
   globalThis.fetch = async (input, options = {}) => {
     const url = String(input); const body = options.body ? JSON.parse(String(options.body).startsWith("{") ? options.body : "{}") : {};
     if (url.includes("oauth2.googleapis.com")) return Response.json({ access_token: "fixture-token", expires_in: 3600 });
@@ -50,17 +50,18 @@ test("API/storage: durable save, atomic retries, AI failure, completion, RBAC an
       return aiFails ? new Response("unavailable", { status: 503 }) : Response.json({ status: "completed", output: [{ content: [{ type: "output_text", text: JSON.stringify({ clientName: "", summary: "Call tomorrow", type: "Follow-up", priority: "Normal", followUp: true, followUpDate: "2026-10-14", status: "Pending" }) }] }] });
     }
     assert.ok(url.includes("/command-center-fixture"), "Never write operational sheets");
-    if (url.includes("?fields=")) return Response.json({ properties: { title: "Owner renamed this spreadsheet" }, sheets: missingSheet ? [] : [{ properties: { sheetId: 7, title: "Notes History" } }] });
+    if (url.includes("?fields=")) return Response.json({ properties: { title: "Owner renamed this spreadsheet" }, sheets: missingSheet ? [] : [{ properties: { sheetId: 7, title: "Notes History", gridProperties: { columnCount: gridColumns } } }] });
     if (url.endsWith("/values:batchUpdate")) {
-      for (const entry of body.data) { const m = /!([A-L])(\d+):/.exec(entry.range); const column = m[1].charCodeAt(0) - 65; entry.values[0].forEach((v, i) => { rows[Number(m[2]) - 1][column + i] = v; }); }
+      for (const entry of body.data) { const m = /!([A-M])(\d+):/.exec(entry.range); const column = m[1].charCodeAt(0) - 65; entry.values[0].forEach((v, i) => { rows[Number(m[2]) - 1][column + i] = v; }); }
       return Response.json({});
     }
     if (url.endsWith(":batchUpdate")) {
+      if (body.requests[0].updateSheetProperties) { gridColumns = body.requests[0].updateSheetProperties.properties.gridProperties.columnCount; return Response.json({}); }
       if (body.requests[0].addSheet) { assert.equal(body.requests[0].addSheet.properties.title, "Notes History"); missingSheet = false; return Response.json({}); }
       if (body.requests[0].updateCells) {
         for (const { updateCells: update } of body.requests) update.rows[0].values.forEach((cell, i) => {
           const row = rows[update.range.startRowIndex];
-          row[update.range.startColumnIndex + i] = cell.userEnteredValue.stringValue ?? (row[11] ? "Completed" : cell.userEnteredValue.formulaValue.includes('"Noted"') ? "Noted" : "Pending");
+          row[update.range.startColumnIndex + i] = cell.userEnteredValue.stringValue ?? (row[12] ? "Cancelled" : row[11] ? "Completed" : cell.userEnteredValue.formulaValue.includes('"Noted"') ? "Noted" : "Pending");
         });
         return Response.json({});
       }
@@ -87,7 +88,7 @@ test("API/storage: durable save, atomic retries, AI failure, completion, RBAC an
     const crossOrigin = req({ action: "save", id, original }, ROLE_OWNER); crossOrigin.headers.set("origin", "https://other.test");
     assert.equal((await POST(crossOrigin)).status, 403);
     const savedResponse = await POST(req({ action: "save", id, original }, ROLE_OWNER));
-    assert.equal(savedResponse.status, 200);
+    assert.equal(savedResponse.status, 200); assert.equal(gridColumns, 13, "Existing sheets expand for cancellation reasons");
     const savedPayload = await savedResponse.json();
     assert.equal(savedPayload.message, "Saved."); assert.equal(savedPayload.note.original, original); assert.equal(savedPayload.note.id, id);
     assert.match(savedPayload.note.timestamp, /T\d{2}:\d{2}:\d{2}-0[78]:00$/);
@@ -128,6 +129,31 @@ test("API/storage: durable save, atomic retries, AI failure, completion, RBAC an
     assert.equal(general.followUp, "No"); assert.equal(general.status, "Noted");
     assert.throws(() => validateDetails({ ...details, priority: "invalid" }));
     assert.throws(() => validateDetails({ ...details, type: "invalid" }));
+    const cancelId = randomUUID();
+    await saveOriginal(cancelId, "Client no longer needs pickup", details);
+    assert.equal((await POST(req({ action: "cancel", id: cancelId, reason: "No longer needed" }, ROLE_FIELD_MANAGER))).status, 403);
+    assert.equal((await POST(req({ action: "cancel", id: cancelId, reason: "   " }, ROLE_OWNER))).status, 400);
+    assert.equal((await POST(req({ action: "cancel", id: cancelId, reason: "x".repeat(2001) }, ROLE_OWNER))).status, 400);
+    const cancelResponse = await POST(req({ action: "cancel", id: cancelId, reason: " Client declined " }, ROLE_OWNER));
+    assert.equal(cancelResponse.status, 200);
+    const cancelled = (await readNotes()).find(n => n.id === cancelId);
+    assert.equal(cancelled.status, "Cancelled"); assert.equal(cancelled.cancellationReason, "Client declined");
+    assert.equal(cancelled.original, "Client no longer needs pickup"); assert.ok(cancelled.completedAt);
+    const retried = await cancelNote(cancelId, "Another reason");
+    assert.equal(retried.cancellationReason, "Client declined"); assert.equal(retried.completedAt, cancelled.completedAt);
+    assert.equal((await POST(req({ action: "complete", id: cancelId }, ROLE_OWNER))).status, 409);
+    assert.equal((await POST(req({ action: "cancel", id, reason: "Already completed" }, ROLE_OWNER))).status, 409);
+    await saveInterpretation(cancelId, { clientName: "", clientId: "", summary: "Late AI", type: "General", priority: "Normal", followUp: "No", followUpDate: "", status: "Noted" });
+    const afterAI = (await readNotes()).find(n => n.id === cancelId);
+    assert.equal(afterAI.status, "Cancelled"); assert.equal(afterAI.cancellationReason, "Client declined");
+    const cancelledGroups = groupNotes(await readNotes());
+    assert.ok(cancelledGroups.cancelled.some(n => n.id === cancelId));
+    for (const section of ["general", "upcoming", "overdue", "completed"]) assert.ok(!cancelledGroups[section].some(n => n.id === cancelId));
+    // Existing 12-column sheets gain only the new header; note contents stay intact.
+    rows[0] = HEADERS.slice(0, 12);
+    const beforeMigration = structuredClone(rows.slice(1));
+    await readNotes();
+    assert.deepEqual(rows[0], [...HEADERS]); assert.deepEqual(rows.slice(1), beforeMigration);
     rows[0][0] = "Wrong header"; await assert.rejects(readNotes(), /headers/);
     rows = []; missingSheet = true; assert.deepEqual(await readNotes(), []); assert.deepEqual(rows[0], [...HEADERS]); assert.equal(missingSheet, false);
   } finally { globalThis.fetch = oldFetch; for (const key of Object.keys(process.env)) if (!(key in oldEnv)) delete process.env[key]; Object.assign(process.env, oldEnv); }
