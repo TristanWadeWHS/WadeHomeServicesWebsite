@@ -162,3 +162,6 @@ export async function readClientRegistry(): Promise<string[][]> {
   const data = await request(`/values/${encodeURIComponent("'Raw Data'!A:ZZ")}`, undefined, HISTORICAL_SPREADSHEET_ID);
   return data.values || [];
 }
+
+// Shared only by server-side Command Center features; retains dedicated-sheet checks.
+export { request as commandCenterRequest };

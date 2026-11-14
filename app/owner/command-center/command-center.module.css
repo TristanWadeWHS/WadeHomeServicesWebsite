@@ -41,3 +41,6 @@
 .cancellation { display: grid; gap: .7rem; padding: 1rem; margin-top: 1rem; background: #fff8f5; border-radius: 8px; }
 .cancellation label { font-weight: 700; }
 .cancellation textarea, .cancellation input { width: 100%; box-sizing: border-box; padding: .8rem; font: inherit; border: 1px solid #a6b7ab; border-radius: 8px; }
+
+.digest { margin: 1.5rem 0; padding: 1.2rem; border: 1px solid #d4ded8; border-radius: 12px; background: #f5f8f5; }
+.digest h3 { margin-top: 0; }

@@ -10,8 +10,8 @@ function displayTime(value: string) {
 }
 const API = "/api/owner/command-center";
 type NoteAction = "complete" | "cancel" | "complete-followup";
-async function call(body?: object) {
-  const response = await fetch(API, { method: body ? "POST" : "GET", cache: "no-store", signal: AbortSignal.timeout(45000), headers: body ? { "Content-Type": "application/json" } : undefined, body: body ? JSON.stringify(body) : undefined });
+async function call(body?: object, path = API) {
+  const response = await fetch(path, { method: body ? "POST" : "GET", cache: "no-store", signal: AbortSignal.timeout(45000), headers: body ? { "Content-Type": "application/json" } : undefined, body: body ? JSON.stringify(body) : undefined });
   let data;
   try { data = await response.json(); } catch { throw new Error("Could not reach Command Center. Your draft is preserved; please retry."); }
   if (!response.ok || !data.ok) throw new Error(data.message || "Could not reach Command Center. Please retry.");
@@ -23,6 +23,10 @@ export function CommandCenter() {
   const [category, setCategory] = useState("General");
   const [priority, setPriority] = useState("Normal");
   const [followUpDate, setFollowUpDate] = useState("");
+  const [digestInfo, setDigestInfo] = useState<{ configured: boolean; recipientCount: number; latestReceipt: { date: string; status: string; sentAt: string } | null } | null>(null);
+  const [digestBusy, setDigestBusy] = useState(false);
+  const [digestMessage, setDigestMessage] = useState("");
+  const [digestError, setDigestError] = useState("");
   const [notes, setNotes] = useState<Note[]>([]);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -38,6 +42,21 @@ export function CommandCenter() {
   const saveKey = useRef<{ id: string; original: string; fingerprint: string } | null>(null);
   const reload = useCallback(async () => { const data = await call(); setNotes(data.notes); }, []);
   useEffect(() => { let active = true; call().then(data => { if (active) setNotes(data.notes); }).catch(e => { if (active) setError(e.message); }).finally(() => { if (active) setLoading(false); }); return () => { active = false; }; }, []);
+  useEffect(() => {
+    let active = true;
+    call(undefined, `${API}/digest`).then(data => { if (active) setDigestInfo(data); }).catch(() => { if (active) setDigestError("Daily email status is unavailable."); });
+    return () => { active = false; };
+  }, []);
+  async function sendDigest() {
+    if (digestBusy) return;
+    setDigestBusy(true); setDigestError(""); setDigestMessage("");
+    try {
+      const result = await call({}, `${API}/digest`);
+      setDigestMessage(result.message);
+      setDigestInfo(await call(undefined, `${API}/digest`));
+    } catch (error) { setDigestError(error instanceof Error ? error.message : "Could not send today's digest."); }
+    finally { setDigestBusy(false); }
+  }
   async function save(event: React.FormEvent) {
     event.preventDefault();
     if (submitting.current || !original.trim()) return;
@@ -124,6 +143,16 @@ export function CommandCenter() {
       {notice ? <p role="status" className={styles.success}>{notice}</p> : null}
       {error ? <p role="alert" className={styles.error}>{error}</p> : null}
     </form>
+    <section className={styles.digest} aria-label="Daily email digest">
+      <h3>Daily email digest</h3>
+      <p>8 AM Pacific · High priorities, overdue and next-seven-day follow-ups, and notes open longer than two weeks.</p>
+      {digestInfo ? <p>{digestInfo.configured ? `Configured for ${digestInfo.recipientCount} recipient${digestInfo.recipientCount === 1 ? "" : "s"}.` : "Daily email needs setup before delivery can begin."}</p> : null}
+      {digestInfo?.latestReceipt ? <p>Latest delivery: {digestInfo.latestReceipt.date} · {digestInfo.latestReceipt.status === "Sent" ? "Accepted by email service" : digestInfo.latestReceipt.status}</p> : null}
+      <button type="button" className={`button ${styles.retryButton}`} disabled={digestBusy || !digestInfo?.configured} onClick={() => void sendDigest()}>{digestBusy ? "Sending digest…" : "Send Today's Digest Now"}</button>
+      <p>Sending now uses today's daily email slot. Repeat requests will not send another copy.</p>
+      {digestMessage ? <p role="status" className={styles.success}>{digestMessage}</p> : null}
+      {digestError ? <p role="alert" className={styles.error}>{digestError}</p> : null}
+    </section>
     {error ? <button type="button" disabled={busy} onClick={() => { setError(""); reload().catch(e => setError(e.message)); }}>Refresh notes</button> : null}
     {loading ? <p role="status">Loading notes…</p> : <>
       <div className={styles.columns}>
