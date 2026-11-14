@@ -1,3 +1,4 @@
+import { EMAIL_SENDER as OWNER_NOTIFICATION_SENDER, EMAIL_REPLY_TO } from "../email/identity";
 import type { NormalizedLead, SheetLead } from "./types";
 
 type OwnerNotificationResult =
@@ -6,10 +7,6 @@ type OwnerNotificationResult =
   | { ok: false; skipped?: false; reason: string };
 
 const BREVO_API_URL = "https://api.brevo.com/v3/smtp/email";
-const OWNER_NOTIFICATION_SENDER = {
-  email: "WadeHomeServices@yahoo.com",
-  name: "Wade Home Services",
-};
 const OWNER_NOTIFICATION_SUBJECT = "New Wade Home Services Booking Request";
 const CUSTOMER_CONFIRMATION_SUBJECT = "Your Wade Home Services Appointment Is Confirmed";
 
@@ -117,6 +114,7 @@ export function buildOwnerNotificationPayload(
 ) {
   return {
     sender: OWNER_NOTIFICATION_SENDER,
+    replyTo: EMAIL_REPLY_TO,
     to: [{ email: recipientEmail }],
     subject: OWNER_NOTIFICATION_SUBJECT,
     htmlContent: ownerNotificationHtml(leadId, lead, portalUrl),
@@ -131,6 +129,7 @@ export function buildOwnerNotificationPayload(
 export function buildCustomerConfirmationPayload(lead: SheetLead) {
   return {
     sender: OWNER_NOTIFICATION_SENDER,
+    replyTo: EMAIL_REPLY_TO,
     to: [{ email: lead.email, name: lead.name }],
     subject: CUSTOMER_CONFIRMATION_SUBJECT,
     htmlContent: customerConfirmationHtml(lead),
@@ -223,7 +222,7 @@ function customerConfirmationHtml(lead: SheetLead) {
     ["Service type(s)", lead.services],
     ["Service address", serviceAddress(lead)],
     ["Phone", "949-424-5605"],
-    ["Email", OWNER_NOTIFICATION_SENDER.email],
+    ["Email", EMAIL_REPLY_TO.email],
   ];
 
   return `<!doctype html>
@@ -265,7 +264,7 @@ function customerConfirmationText(lead: SheetLead) {
     "",
     "Wade Home Services contact information:",
     "Phone: 949-424-5605",
-    `Email: ${OWNER_NOTIFICATION_SENDER.email}`,
+    `Email: ${EMAIL_REPLY_TO.email}`,
   ].join("\n");
 }
 
