@@ -9,7 +9,7 @@ function displayTime(value: string) {
   return Number.isNaN(date.getTime()) ? value : new Intl.DateTimeFormat("en-US", { timeZone: "America/Los_Angeles", dateStyle: "medium", timeStyle: "short" }).format(date);
 }
 const API = "/api/owner/command-center";
-type NoteAction = "complete" | "cancel";
+type NoteAction = "complete" | "cancel" | "complete-followup";
 async function call(body?: object) {
   const response = await fetch(API, { method: body ? "POST" : "GET", cache: "no-store", signal: AbortSignal.timeout(45000), headers: body ? { "Content-Type": "application/json" } : undefined, body: body ? JSON.stringify(body) : undefined });
   let data;
@@ -28,6 +28,9 @@ export function CommandCenter() {
   const [busy, setBusy] = useState(false);
   const [activeAction, setActiveAction] = useState<{ id: string; action: NoteAction } | null>(null);
   const [cancellingId, setCancellingId] = useState<string | null>(null);
+  const [followUpId, setFollowUpId] = useState<string | null>(null);
+  const [nextStep, setNextStep] = useState("");
+  const [nextDate, setNextDate] = useState("");
   const [reason, setReason] = useState("");
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
@@ -56,8 +59,8 @@ export function CommandCenter() {
   async function action(id: string, action: NoteAction) {
     if (submitting.current) return;
     submitting.current = true; setBusy(true); setActiveAction({ id, action }); setError(""); setNotice("");
-    try { const result = await call({ id, action, ...(action === "cancel" ? { reason } : {}) }); setNotice(result.message);
-      if (action === "cancel") { setCancellingId(null); setReason(""); }
+    try { const result = await call({ id, action, ...(action === "cancel" ? { reason } : action === "complete-followup" ? { nextStep, followUpDate: nextDate } : {}) }); setNotice(result.message);
+      setCancellingId(null); setReason(""); setFollowUpId(null); setNextStep(""); setNextDate("");
       await reload(); }
     catch (e) { setError(e instanceof Error ? e.message : "Update failed. Please retry."); }
     finally { submitting.current = false; setBusy(false); setActiveAction(null); }
@@ -69,6 +72,8 @@ export function CommandCenter() {
         <div className={styles.meta}><span className={note.priority === "Urgent" || note.priority === "High" ? styles.important : undefined}>{note.priority || "Normal"} priority</span><span>{displayTime(note.timestamp)} PT</span></div>
         <h4>{note.clientName.trim() || "No client name"}</h4>
         <p className={styles.original}>{note.original}</p>
+        {note.parentNoteId ? <details><summary>Previous note</summary><p className={styles.original}>{notes.find(previous => previous.id === note.parentNoteId)?.original || "Linked to an earlier note."}</p></details> : null}
+        {notes.filter(next => next.parentNoteId === note.id).map(next => <p key={next.id}>Follow-up: {next.followUpDate} · {next.status === "Cancelled" ? "Cancelled" : next.completedAt ? "Completed" : "Open"}</p>)}
         <p>{note.status === "Cancelled" ? "Cancelled" : note.completedAt || note.status === "Completed" ? "Completed" : note.followUp === "Yes" ? `Follow up: ${note.followUpDate || "Choose a date"}` : "Saved · No follow-up scheduled"}</p>
         {note.summary ? <details><summary>AI summary</summary><p>{note.summary}</p></details> : null}
         {note.completedAt ? <p>{note.status === "Cancelled" ? "Cancelled" : "Completed"} {displayTime(note.completedAt)}</p> : null}
@@ -77,8 +82,20 @@ export function CommandCenter() {
           {!note.completedAt && note.status !== "Completed" && note.status !== "Cancelled" ? <button type="button" className={`button ${styles.completeButton}`} disabled={busy} aria-busy={activeAction?.id === note.id && activeAction.action === "complete"} onClick={() => action(note.id, "complete")}>
             <span className={styles.actionIcon} aria-hidden="true">✓</span>{activeAction?.id === note.id && activeAction.action === "complete" ? "Completing…" : "Mark Complete"}
           </button> : null}
-          {!note.completedAt && note.status !== "Completed" && note.status !== "Cancelled" ? <button type="button" className={`button ${styles.cancelButton}`} disabled={busy} onClick={() => { setCancellingId(note.id); setReason(""); setError(""); }}>Mark Cancelled</button> : null}
+          {!note.completedAt && note.status !== "Completed" && note.status !== "Cancelled" ? <button type="button" className={`button ${styles.retryButton}`} disabled={busy} onClick={() => { setFollowUpId(note.id); setNextStep(""); setNextDate(""); setCancellingId(null); setError(""); }}>Complete + Follow-up</button> : null}
+          {!note.completedAt && note.status !== "Completed" && note.status !== "Cancelled" ? <button type="button" className={`button ${styles.cancelButton}`} disabled={busy} onClick={() => { setCancellingId(note.id); setFollowUpId(null); setReason(""); setError(""); }}>Mark Cancelled</button> : null}
         </div>
+        {followUpId === note.id ? <form className={styles.cancellation} onSubmit={event => { event.preventDefault(); void action(note.id, "complete-followup"); }}>
+          <p>Complete this note and create a linked follow-up for {note.clientName || "the same client"}.</p>
+          <label htmlFor={`next-step-${note.id}`}>Next step</label>
+          <textarea autoFocus id={`next-step-${note.id}`} value={nextStep} onChange={event => setNextStep(event.target.value)} maxLength={40000} rows={3} required disabled={busy} />
+          <label htmlFor={`next-date-${note.id}`}>Follow-up date</label>
+          <input id={`next-date-${note.id}`} type="date" value={nextDate} onChange={event => setNextDate(event.target.value)} required disabled={busy} />
+          <div className={styles.actions}>
+            <button type="submit" className={`button ${styles.completeButton}`} disabled={busy || !nextStep.trim() || !nextDate}>{activeAction?.action === "complete-followup" ? "Saving…" : "Complete & Schedule Follow-up"}</button>
+            <button type="button" className="button" disabled={busy} onClick={() => { setFollowUpId(null); setNextStep(""); setNextDate(""); }}>Keep Note Open</button>
+          </div>
+        </form> : null}
         {cancellingId === note.id ? <form className={styles.cancellation} onSubmit={event => { event.preventDefault(); void action(note.id, "cancel"); }}>
           <label htmlFor={`cancel-reason-${note.id}`}>Why is this note being cancelled?</label>
           <textarea autoFocus id={`cancel-reason-${note.id}`} value={reason} onChange={event => setReason(event.target.value)} maxLength={2000} rows={3} required disabled={busy} />
