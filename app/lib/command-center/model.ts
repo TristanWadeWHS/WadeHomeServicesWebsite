@@ -1,11 +1,11 @@
-export const HEADERS = ["Note ID", "Timestamp", "Client Name", "Client ID", "Original Note", "AI Summary", "Note Type", "Priority", "Follow-Up Required", "Follow-Up Date", "Status", "Completed At", "Cancellation Reason"] as const;
+export const HEADERS = ["Note ID", "Timestamp", "Client Name", "Client ID", "Original Note", "AI Summary", "Note Type", "Priority", "Follow-Up Required", "Follow-Up Date", "Status", "Completed At", "Cancellation Reason", "Previous Note ID"] as const;
 export const TIMEZONE = "America/Los_Angeles";
-export type Note = { id: string; timestamp: string; clientName: string; clientId: string; original: string; summary: string; type: string; priority: string; followUp: string; followUpDate: string; status: string; completedAt: string; cancellationReason: string };
+export type Note = { id: string; timestamp: string; clientName: string; clientId: string; original: string; summary: string; type: string; priority: string; followUp: string; followUpDate: string; status: string; completedAt: string; cancellationReason: string; parentNoteId: string };
 export function fromRow(row: string[]): Note {
-  const [id = "", timestamp = "", clientName = "", clientId = "", original = "", summary = "", type = "", priority = "", followUp = "", followUpDate = "", status = "", completedAt = "", cancellationReason = ""] = row;
-  return { id, timestamp, clientName, clientId, original, summary, type, priority, followUp, followUpDate, status, completedAt, cancellationReason };
+  const [id = "", timestamp = "", clientName = "", clientId = "", original = "", summary = "", type = "", priority = "", followUp = "", followUpDate = "", status = "", completedAt = "", cancellationReason = "", parentNoteId = ""] = row;
+  return { id, timestamp, clientName, clientId, original, summary, type, priority, followUp, followUpDate, status, completedAt, cancellationReason, parentNoteId };
 }
-export function toRow(n: Note): string[] { return [n.id, n.timestamp, n.clientName, n.clientId, n.original, n.summary, n.type, n.priority, n.followUp, n.followUpDate, n.status, n.completedAt, n.cancellationReason]; }
+export function toRow(n: Note): string[] { return [n.id, n.timestamp, n.clientName, n.clientId, n.original, n.summary, n.type, n.priority, n.followUp, n.followUpDate, n.status, n.completedAt, n.cancellationReason, n.parentNoteId]; }
 export function localDate(now = new Date()) { return new Intl.DateTimeFormat("en-CA", { timeZone: TIMEZONE, year: "numeric", month: "2-digit", day: "2-digit" }).format(now); }
 export function localTimestamp(now = new Date()) {
   const parts = new Intl.DateTimeFormat("en-CA", { timeZone: TIMEZONE, year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit", hourCycle: "h23", timeZoneName: "longOffset" }).formatToParts(now);

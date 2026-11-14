@@ -1,5 +1,5 @@
 import { requireRole, ROLE_OWNER, isSameOriginRequest } from "../../../lib/booking/ownerAuth";
-import { CommandCenterError, readNotes, saveOriginal, findNote, completeNote, cancelNote } from "../../../lib/command-center/store";
+import { CommandCenterError, readNotes, saveOriginal, findNote, completeNote, cancelNote, completeWithFollowUp } from "../../../lib/command-center/store";
 import { interpretNote } from "../../../lib/command-center/interpret";
 import { readJsonWithLimit } from "../../../lib/booking/security";
 
@@ -25,7 +25,7 @@ export async function POST(request: Request) {
   try {
     const parsed = await readJsonWithLimit(request, 250000);
     if (!parsed.ok) return json({ ok: false, message: parsed.message }, parsed.status);
-    const body = parsed.value as { id?: string; action?: string; original?: string; details?: unknown; reason?: unknown } | null;
+    const body = parsed.value as { id?: string; action?: string; original?: string; details?: unknown; reason?: unknown; nextStep?: unknown; followUpDate?: unknown } | null;
     if (!body || typeof body !== "object" || !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(body.id || "")) return json({ ok: false, message: "Invalid note save key." }, 400);
     const id = body.id!;
     if (body.action === "save") {
@@ -39,6 +39,10 @@ export async function POST(request: Request) {
       return json({ ok: true, message: "Saved.", note });
     }
     if (body.action === "complete") { await completeNote(id); return json({ ok: true, message: "Note marked complete." }); }
+    if (body.action === "complete-followup") {
+      const result = await completeWithFollowUp(id, body.nextStep, body.followUpDate);
+      return json({ ok: true, ...result, message: "Note completed. Linked follow-up scheduled." });
+    }
     if (body.action === "cancel") { await cancelNote(id, body.reason); return json({ ok: true, message: "Note cancelled. Reason saved." }); }
     if (body.action === "interpret") {
       const { note } = await findNote(id);

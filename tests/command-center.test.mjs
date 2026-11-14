@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { generateKeyPairSync, randomUUID } from "node:crypto";
 import { HEADERS, localDate, localTimestamp, fromRow, groupNotes, validateDetails, resolveClientId } from "../app/lib/command-center/model.ts";
-import { saveOriginal, completeNote, cancelNote, saveInterpretation, readNotes } from "../app/lib/command-center/store.ts";
+import { saveOriginal, completeNote, cancelNote, completeWithFollowUp, saveInterpretation, readNotes } from "../app/lib/command-center/store.ts";
 import { interpretNote, validateInterpretation } from "../app/lib/command-center/interpret.ts";
 import { GET, POST } from "../app/api/owner/command-center/route.ts";
 import { createOperationsSession, ROLE_OWNER, ROLE_FIELD_MANAGER, OPERATIONS_SESSION_COOKIE, OPERATIONS_SESSION_ACTIVE_COOKIE } from "../app/lib/booking/ownerAuth.ts";
@@ -52,24 +52,27 @@ test("API/storage: durable save, atomic retries, AI failure, completion, RBAC an
     assert.ok(url.includes("/command-center-fixture"), "Never write operational sheets");
     if (url.includes("?fields=")) return Response.json({ properties: { title: "Owner renamed this spreadsheet" }, sheets: missingSheet ? [] : [{ properties: { sheetId: 7, title: "Notes History", gridProperties: { columnCount: gridColumns } } }] });
     if (url.endsWith("/values:batchUpdate")) {
-      for (const entry of body.data) { const m = /!([A-M])(\d+):/.exec(entry.range); const column = m[1].charCodeAt(0) - 65; entry.values[0].forEach((v, i) => { rows[Number(m[2]) - 1][column + i] = v; }); }
+      for (const entry of body.data) { const m = /!([A-N])(\d+)/.exec(entry.range); const column = m[1].charCodeAt(0) - 65; entry.values[0].forEach((v, i) => { rows[Number(m[2]) - 1][column + i] = v; }); }
       return Response.json({});
     }
     if (url.endsWith(":batchUpdate")) {
       if (body.requests[0].updateSheetProperties) { gridColumns = body.requests[0].updateSheetProperties.properties.gridProperties.columnCount; return Response.json({}); }
       if (body.requests[0].addSheet) { assert.equal(body.requests[0].addSheet.properties.title, "Notes History"); missingSheet = false; return Response.json({}); }
-      if (body.requests[0].updateCells) {
-        for (const { updateCells: update } of body.requests) update.rows[0].values.forEach((cell, i) => {
-          const row = rows[update.range.startRowIndex];
-          row[update.range.startColumnIndex + i] = cell.userEnteredValue.stringValue ?? (row[12] ? "Cancelled" : row[11] ? "Completed" : cell.userEnteredValue.formulaValue.includes('"Noted"') ? "Noted" : "Pending");
-        });
-        return Response.json({});
+      const incomingReceipts = body.requests.flatMap(r => r.addNamedRange ? [r.addNamedRange.namedRange.namedRangeId] : []);
+      if (incomingReceipts.some(receipt => receipts.has(receipt))) return new Response("Duplicate receipt", { status: 400 });
+      for (const receipt of incomingReceipts) receipts.add(receipt);
+      for (const operation of body.requests) {
+        if (operation.updateCells) {
+          const update = operation.updateCells;
+          const index = update.range?.startRowIndex ?? update.start.rowIndex;
+          const column = update.range?.startColumnIndex ?? update.start.columnIndex;
+          const row = rows[index] ?? (rows[index] = []);
+          update.rows[0].values.forEach((cell, i) => {
+            row[column + i] = cell.userEnteredValue.stringValue ?? (row[12] ? "Cancelled" : row[11] ? "Completed" : cell.userEnteredValue.formulaValue.includes('"Noted"') ? "Noted" : "Pending");
+          });
+        }
+        if (operation.appendCells) rows.push(operation.appendCells.rows[0].values.map(v => v.userEnteredValue.stringValue));
       }
-      const receipt = body.requests[0].addNamedRange.namedRange.namedRangeId;
-      if (receipts.has(receipt)) return new Response("Duplicate receipt", { status: 400 });
-      receipts.add(receipt);
-      if (receipt === "cc_schema_v1") { rows = [body.requests[1].updateCells.rows[0].values.map(v => v.userEnteredValue.stringValue)]; return Response.json({}); }
-      rows.push(body.requests[1].appendCells.rows[0].values.map(v => v.userEnteredValue.stringValue));
       if (loseAcknowledgement) { loseAcknowledgement = false; throw new Error("Connection lost after commit"); }
       return Response.json({});
     }
@@ -88,7 +91,7 @@ test("API/storage: durable save, atomic retries, AI failure, completion, RBAC an
     const crossOrigin = req({ action: "save", id, original }, ROLE_OWNER); crossOrigin.headers.set("origin", "https://other.test");
     assert.equal((await POST(crossOrigin)).status, 403);
     const savedResponse = await POST(req({ action: "save", id, original }, ROLE_OWNER));
-    assert.equal(savedResponse.status, 200); assert.equal(gridColumns, 13, "Existing sheets expand for cancellation reasons");
+    assert.equal(savedResponse.status, 200); assert.equal(gridColumns, 14, "Existing sheets expand for cancellation reasons");
     const savedPayload = await savedResponse.json();
     assert.equal(savedPayload.message, "Saved."); assert.equal(savedPayload.note.original, original); assert.equal(savedPayload.note.id, id);
     assert.match(savedPayload.note.timestamp, /T\d{2}:\d{2}:\d{2}-0[78]:00$/);
@@ -154,6 +157,42 @@ test("API/storage: durable save, atomic retries, AI failure, completion, RBAC an
     const beforeMigration = structuredClone(rows.slice(1));
     await readNotes();
     assert.deepEqual(rows[0], [...HEADERS]); assert.deepEqual(rows.slice(1), beforeMigration);
+    const followParent = randomUUID();
+    await saveOriginal(followParent, "Sent quote", details);
+    for (const [nextStep, followUpDate] of [["", "2026-11-20"], ["Call client", "2026-02-30"]]) {
+      assert.equal((await POST(req({ action: "complete-followup", id: followParent, nextStep, followUpDate }, ROLE_OWNER))).status, 400);
+      assert.equal((await readNotes()).find(n => n.id === followParent).status, "Pending");
+    }
+    const followPayload = { action: "complete-followup", id: followParent, nextStep: "Call to confirm quote", followUpDate: "2026-11-20" };
+    assert.equal((await POST(req(followPayload, ROLE_FIELD_MANAGER))).status, 403);
+    const crossFollow = req(followPayload, ROLE_OWNER); crossFollow.headers.set("origin", "https://other.test");
+    assert.equal((await POST(crossFollow)).status, 403);
+    loseAcknowledgement = true;
+    const result = await POST(req(followPayload, ROLE_OWNER));
+    assert.equal(result.status, 200);
+    await Promise.all([completeWithFollowUp(followParent, followPayload.nextStep, followPayload.followUpDate), completeWithFollowUp(followParent, followPayload.nextStep, followPayload.followUpDate)]);
+    const all = await readNotes();
+    assert.equal(all.find(n => n.id === followParent).status, "Completed");
+    const children = all.filter(n => n.parentNoteId === followParent);
+    assert.equal(children.length, 1); assert.equal(children[0].clientName, details.clientName); assert.equal(children[0].priority, details.priority);
+    assert.equal(children[0].original, followPayload.nextStep); assert.equal(children[0].followUpDate, followPayload.followUpDate);
+    assert.equal(children[0].status, "Pending"); assert.equal(children[0].completedAt, "");
+    assert.ok(groupNotes(all, "2026-11-19").upcoming.some(n => n.id === children[0].id));
+    await assert.rejects(completeWithFollowUp(followParent, "Different action", followPayload.followUpDate), /already been completed/);
+    await assert.rejects(completeWithFollowUp(cancelId, "Call", "2026-11-20"), /cancelled/);
+    const raceParent = randomUUID(); await saveOriginal(raceParent, "Race check", details);
+    const raced = await Promise.allSettled([completeWithFollowUp(raceParent, "Next step", "2026-11-20"), cancelNote(raceParent, "No longer needed")]);
+    assert.equal(raced.filter(r => r.status === "fulfilled").length, 1);
+    const afterRace = await readNotes();
+    const raceNote = afterRace.find(n => n.id === raceParent);
+    assert.equal(afterRace.filter(n => n.parentNoteId === raceParent).length, raceNote.status === "Completed" ? 1 : 0);
+    const retryParent = randomUUID(); await saveOriginal(retryParent, "Concurrent follow-up", details);
+    await Promise.all([completeWithFollowUp(retryParent, "Call", "2026-11-20"), completeWithFollowUp(retryParent, "Call", "2026-11-20")]);
+    assert.equal((await readNotes()).filter(n => n.parentNoteId === retryParent).length, 1);
+    // Upgrade the immediately preceding 13-column schema without touching notes.
+    rows[0] = HEADERS.slice(0, 13);
+    const priorRows = structuredClone(rows.slice(1));
+    await readNotes(); assert.deepEqual(rows[0], [...HEADERS]); assert.deepEqual(rows.slice(1), priorRows);
     rows[0][0] = "Wrong header"; await assert.rejects(readNotes(), /headers/);
     rows = []; missingSheet = true; assert.deepEqual(await readNotes(), []); assert.deepEqual(rows[0], [...HEADERS]); assert.equal(missingSheet, false);
   } finally { globalThis.fetch = oldFetch; for (const key of Object.keys(process.env)) if (!(key in oldEnv)) delete process.env[key]; Object.assign(process.env, oldEnv); }

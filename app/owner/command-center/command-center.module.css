@@ -40,4 +40,4 @@
 .cancelButton:focus-visible { outline: 3px solid #b45b45; outline-offset: 3px; }
 .cancellation { display: grid; gap: .7rem; padding: 1rem; margin-top: 1rem; background: #fff8f5; border-radius: 8px; }
 .cancellation label { font-weight: 700; }
-.cancellation textarea { width: 100%; box-sizing: border-box; padding: .8rem; font: inherit; border: 1px solid #a6b7ab; border-radius: 8px; }
+.cancellation textarea, .cancellation input { width: 100%; box-sizing: border-box; padding: .8rem; font: inherit; border: 1px solid #a6b7ab; border-radius: 8px; }
