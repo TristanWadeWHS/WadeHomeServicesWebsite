@@ -27,3 +27,11 @@
 .root summary { cursor: pointer; font-weight: 600; }
 @media(max-width: 700px) { .columns { grid-template-columns: 1fr; gap: 0; } .actions button { width: 100%; } }
 @media (prefers-reduced-motion: reduce) { .completeButton, .retryButton { transition: none; } .completeButton:hover:not(:disabled), .retryButton:hover:not(:disabled) { transform: none; } }
+
+.fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; }
+.fields label { display: grid; gap: .5rem; min-width: 0; }
+.fields input, .fields select { width: 100%; min-width: 0; box-sizing: border-box; padding: .8rem; border: 1px solid #a6b7ab; border-radius: 8px; background: white; color: #182f25; font: inherit; }
+.fields input:focus-visible, .fields select:focus-visible { outline: 3px solid #a8c7ae; outline-offset: 2px; }
+@media(max-width: 700px) { .fields { grid-template-columns: 1fr; } }
+
+.important { color: #842c1a; background: #fff0ec; border-radius: 6px; padding: .2rem .5rem; font-weight: 700; }

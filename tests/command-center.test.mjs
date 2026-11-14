@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { generateKeyPairSync, randomUUID } from "node:crypto";
-import { HEADERS, localDate, localTimestamp, fromRow, groupNotes, resolveClientId } from "../app/lib/command-center/model.ts";
+import { HEADERS, localDate, localTimestamp, fromRow, groupNotes, validateDetails, resolveClientId } from "../app/lib/command-center/model.ts";
 import { saveOriginal, completeNote, saveInterpretation, readNotes } from "../app/lib/command-center/store.ts";
 import { interpretNote, validateInterpretation } from "../app/lib/command-center/interpret.ts";
 import { GET, POST } from "../app/api/owner/command-center/route.ts";
@@ -108,6 +108,26 @@ test("API/storage: durable save, atomic retries, AI failure, completion, RBAC an
     assert.match(aiPrompt.instructions, /2026-10-13/); assert.equal(aiPrompt.input, original);
     assert.equal(rows[1][4], original); assert.equal(rows[1][10], "Completed"); assert.equal(rows[1][11], completed.completedAt);
     assert.equal(rows[1][9], "2026-10-14");
+    const details = { clientName: "Nina", type: "Payment", priority: "High", followUpDate: "2026-11-15" };
+    const structuredId = randomUUID();
+    const structured = await POST(req({ action: "save", id: structuredId, original: "Call about invoice", details }, ROLE_OWNER));
+    assert.equal(structured.status, 200);
+    const structuredNote = (await structured.json()).note;
+    for (const key of Object.keys(details)) assert.equal(structuredNote[key], details[key]);
+    assert.equal(structuredNote.followUp, "Yes"); assert.equal(structuredNote.status, "Pending");
+    const count = rows.length;
+    await saveOriginal(structuredId, "Call about invoice", details);
+    assert.equal(rows.length, count);
+    await assert.rejects(saveOriginal(structuredId, "Call about invoice", { ...details, priority: "Low" }), /different note/);
+    const before = structuredClone(rows);
+    await POST(req({ action: "interpret", id: structuredId }, ROLE_OWNER));
+    assert.deepEqual(rows, before, "AI cannot overwrite manually selected fields");
+    const invalid = await POST(req({ action: "save", id: randomUUID(), original: "Invalid date", details: { ...details, followUpDate: "2026-02-30" } }, ROLE_OWNER));
+    assert.equal(invalid.status, 400); assert.equal(rows.length, count);
+    const general = await saveOriginal(randomUUID(), "Idea", { ...details, type: "Idea", followUpDate: "" });
+    assert.equal(general.followUp, "No"); assert.equal(general.status, "Noted");
+    assert.throws(() => validateDetails({ ...details, priority: "invalid" }));
+    assert.throws(() => validateDetails({ ...details, type: "invalid" }));
     rows[0][0] = "Wrong header"; await assert.rejects(readNotes(), /headers/);
     rows = []; missingSheet = true; assert.deepEqual(await readNotes(), []); assert.deepEqual(rows[0], [...HEADERS]); assert.equal(missingSheet, false);
   } finally { globalThis.fetch = oldFetch; for (const key of Object.keys(process.env)) if (!(key in oldEnv)) delete process.env[key]; Object.assign(process.env, oldEnv); }

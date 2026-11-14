@@ -34,3 +34,13 @@ export function resolveClientId(name: string, original: string, rows: string[][]
   const ids = new Set(matches.map(row => row[idIndex]?.trim() || ""));
   return ids.size === 1 && !ids.has("") ? [...ids][0] : "";
 }
+
+export const CATEGORIES = ["General", "Client follow-up", "Estimate / Quote", "Scheduling", "Payment", "Operations", "Idea"] as const;
+export const PRIORITIES = ["Low", "Normal", "High", "Urgent"] as const;
+export type NoteDetails = { clientName: string; type: string; priority: string; followUpDate: string };
+export function validateDetails(value: unknown): NoteDetails {
+  if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("Choose valid note details.");
+  const v = value as Record<string, unknown>;
+  if (typeof v.clientName !== "string" || v.clientName.length > 200 || !CATEGORIES.includes(v.type as typeof CATEGORIES[number]) || !PRIORITIES.includes(v.priority as typeof PRIORITIES[number]) || (v.followUpDate !== "" && !validDate(v.followUpDate))) throw new Error("Check the client name, category, priority, and follow-up date.");
+  return { clientName: v.clientName.trim(), type: v.type as string, priority: v.priority as string, followUpDate: v.followUpDate as string };
+}

@@ -1,9 +1,13 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { groupNotes, type Note } from "../../lib/command-center/model";
+import { CATEGORIES, PRIORITIES, groupNotes, type Note } from "../../lib/command-center/model";
 import styles from "./command-center.module.css";
 
+function displayTime(value: string) {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? value : new Intl.DateTimeFormat("en-US", { timeZone: "America/Los_Angeles", dateStyle: "medium", timeStyle: "short" }).format(date);
+}
 const API = "/api/owner/command-center";
 type NoteAction = "complete" | "interpret";
 async function call(body?: object) {
@@ -15,6 +19,10 @@ async function call(body?: object) {
 }
 export function CommandCenter() {
   const [original, setOriginal] = useState("");
+  const [clientName, setClientName] = useState("");
+  const [category, setCategory] = useState("General");
+  const [priority, setPriority] = useState("Normal");
+  const [followUpDate, setFollowUpDate] = useState("");
   const [notes, setNotes] = useState<Note[]>([]);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -22,7 +30,7 @@ export function CommandCenter() {
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
   const submitting = useRef(false);
-  const saveKey = useRef<{ id: string; original: string } | null>(null);
+  const saveKey = useRef<{ id: string; original: string; fingerprint: string } | null>(null);
   const reload = useCallback(async () => { const data = await call(); setNotes(data.notes); }, []);
   useEffect(() => { let active = true; call().then(data => { if (active) setNotes(data.notes); }).catch(e => { if (active) setError(e.message); }).finally(() => { if (active) setLoading(false); }); return () => { active = false; }; }, []);
   async function save(event: React.FormEvent) {
@@ -30,17 +38,15 @@ export function CommandCenter() {
     if (submitting.current || !original.trim()) return;
     submitting.current = true; setBusy(true); setError(""); setNotice("");
     try {
-      if (!saveKey.current || saveKey.current.original !== original) saveKey.current = { id: crypto.randomUUID(), original };
-      const payload = saveKey.current;
+      const details = { clientName, type: category, priority, followUpDate };
+      const fingerprint = JSON.stringify({ original, details });
+      if (!saveKey.current || saveKey.current.fingerprint !== fingerprint) saveKey.current = { id: crypto.randomUUID(), original, fingerprint };
+      const payload = { id: saveKey.current.id, original, details };
       const result = await call({ action: "save", ...payload });
       setNotes(current => [result.note, ...current.filter(note => note.id !== result.note.id)]);
       setOriginal(""); saveKey.current = null;
-      setNotice("Saved. Your original note is in Notes History.");
-      // The save is finished. AI and refresh are optional background work and
-      // cannot withhold confirmation, the saved row, or release of the button.
-      void call({ action: "interpret", id: payload.id }).then(() => reload()).catch(() => {
-        // Original remains visible; its Retry AI processing action stays usable.
-      });
+      setClientName(""); setCategory("General"); setPriority("Normal"); setFollowUpDate("");
+      setNotice("Saved with your selected details. Follow-ups appear under Overdue or Upcoming.");
     } catch (e) {
       setError(e instanceof Error && e.name !== "TimeoutError" && e.name !== "AbortError" ? e.message : "Save could not be confirmed. Your draft is preserved; retrying will not create a duplicate.");
     } finally { setBusy(false); submitting.current = false; }
@@ -56,16 +62,17 @@ export function CommandCenter() {
   function cards(items: Note[], empty: string) {
     return items.length ? items.map(note => (
       <article className={styles.card} key={note.id}>
-        <div className={styles.meta}><span>{note.clientName || "General"} · {note.priority}</span><span>{note.timestamp.replace("T", " ")}</span></div>
-        <h4>{note.summary || "Awaiting AI processing"}</h4>
-        <p>{note.type} · {note.status}{note.followUp === "Yes" ? ` · ${note.followUpDate ? `Follow up ${note.followUpDate}` : "Follow-up date not specified"}` : ""}</p>
-        <details><summary>Original note</summary><p className={styles.original}>{note.original}</p></details>
-        {note.completedAt ? <p>Completed {note.completedAt.replace("T", " ")}</p> : null}
+        <div className={styles.meta}><span className={note.priority === "Urgent" || note.priority === "High" ? styles.important : undefined}>{note.priority || "Normal"} priority</span><span>{displayTime(note.timestamp)} PT</span></div>
+        <h4>{note.type === "Unprocessed" ? "General note" : note.type || "General note"}{note.clientName ? ` · ${note.clientName}` : ""}</h4>
+        <p className={styles.original}>{note.original}</p>
+        <p>{note.completedAt || note.status === "Completed" ? "Completed" : note.followUp === "Yes" ? `Follow up: ${note.followUpDate || "Choose a date"}` : "Saved · No follow-up scheduled"}</p>
+        {note.summary ? <details><summary>AI summary</summary><p>{note.summary}</p></details> : null}
+        {note.completedAt ? <p>Completed {displayTime(note.completedAt)}</p> : null}
         <div className={styles.actions}>
           {!note.completedAt && note.status !== "Completed" ? <button type="button" className={`button ${styles.completeButton}`} disabled={busy} aria-busy={activeAction?.id === note.id && activeAction.action === "complete"} onClick={() => action(note.id, "complete")}>
             <span className={styles.actionIcon} aria-hidden="true">✓</span>{activeAction?.id === note.id && activeAction.action === "complete" ? "Completing…" : "Mark Complete"}
           </button> : null}
-          {!note.summary ? <button type="button" className={`button ${styles.retryButton}`} disabled={busy} aria-busy={activeAction?.id === note.id && activeAction.action === "interpret"} onClick={() => action(note.id, "interpret")}>
+          {!note.summary && note.type === "Unprocessed" ? <button type="button" className={`button ${styles.retryButton}`} disabled={busy} aria-busy={activeAction?.id === note.id && activeAction.action === "interpret"} onClick={() => action(note.id, "interpret")}>
             <span className={styles.actionIcon} aria-hidden="true">↻</span>{activeAction?.id === note.id && activeAction.action === "interpret" ? "Retrying AI…" : "Retry AI Processing"}
           </button> : null}
         </div>
@@ -73,12 +80,19 @@ export function CommandCenter() {
     )) : <p className={styles.empty}>{empty}</p>;
   }
   return <div className={styles.root}>
-    <header><p className="eyebrow">Owner · Command Center</p><h2>What do we need to take note of today, Mr. Wade?</h2><p>Capture the whole thought. We’ll organize the details and follow-ups.</p></header>
+    <header><p className="eyebrow">Owner · Command Center</p><h2>What do we need to take note of today, Mr. Wade?</h2><p>Choose a category, add the details, and set a follow-up date when you need to take action.</p></header>
     <form onSubmit={save} className={styles.entry}>
+      <div className={styles.fields}>
+        <label>Category<select value={category} disabled={busy} onChange={e => setCategory(e.target.value)}>{CATEGORIES.map(value => <option key={value}>{value}</option>)}</select></label>
+        <label>Client name (optional)<input value={clientName} maxLength={200} disabled={busy} onChange={e => setClientName(e.target.value)} placeholder="Client name" /></label>
+        <label>Priority<select value={priority} disabled={busy} onChange={e => setPriority(e.target.value)}>{PRIORITIES.map(value => <option key={value}>{value}</option>)}</select></label>
+        <label>Follow-up date (optional)<input type="date" value={followUpDate} disabled={busy} onChange={e => setFollowUpDate(e.target.value)} /></label>
+      </div>
+      <p>Leave the date blank to save without a scheduled follow-up. Dates organize your notes here; they do not send reminders.</p>
       <label htmlFor="command-center-note">Your note</label>
       <textarea id="command-center-note" rows={7} maxLength={40000} value={original} disabled={busy} onChange={e => setOriginal(e.target.value)} placeholder="A client to follow up with, something to remember, or an idea for later…" required />
       <div className={styles.actions}><button className="button button--primary" disabled={busy || !original.trim()} type="submit">{busy ? "Working…" : "Save Note"}</button><span>Dates use Pacific time.</span></div>
-      {busy ? <p role="status">Saving your note…</p> : null}
+      {busy ? <p role="status">{activeAction ? "Updating note…" : "Saving your note…"}</p> : null}
       {notice ? <p role="status" className={styles.success}>{notice}</p> : null}
       {error ? <p role="alert" className={styles.error}>{error}</p> : null}
     </form>
