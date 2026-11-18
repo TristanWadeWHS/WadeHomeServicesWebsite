@@ -1220,3 +1220,38 @@ function sheetLeadFixture(overrides = {}) {
     ...overrides,
   };
 }
+
+test("optional promo codes normalize, persist with the booking, and reach both owner email formats", () => {
+  for (const code of [undefined, "", "  hauliday15  ", "CUSTOM-CODE"]) {
+    const result = validateSubmission(validSubmission({ promoCode: code }));
+    assert.equal(result.ok, true);
+    const expected = (code || "").trim().toUpperCase();
+    assert.equal(result.value.promoCode, expected);
+    const row = mapLeadToColumns("WHS-PROMO-TEST", result.value, REQUIRED_SHEET_COLUMNS);
+    const notes = row[REQUIRED_SHEET_COLUMNS.indexOf("Internal Notes")];
+    assert.ok(notes.includes("Website request awaiting owner review."));
+    if (expected) assert.ok(notes.includes(`Promo code: ${expected}.`));
+    const payload = buildOwnerNotificationPayload("WHS-PROMO-TEST", result.value, "https://example.com/owner", "owner@example.com");
+    assert.ok(payload.textContent.includes(expected || "None"));
+    assert.ok(payload.htmlContent.includes(expected || "None"));
+    const without = validateSubmission(validSubmission({ startedAt: result.value.startedAt })).value;
+    const withPromo = { ...result.value };
+    const withoutPromo = { ...without };
+    delete withPromo.promoCode;
+    delete withoutPromo.promoCode;
+    // Promo collection does not change service, appointment, or pricing data.
+    assert.deepEqual(withPromo, withoutPromo);
+  }
+});
+
+test("promo input is bounded and escaped in owner notifications", () => {
+  assert.equal(validateSubmission(validSubmission({ promoCode: {} })).ok, false);
+  assert.equal(validateSubmission(validSubmission({ promoCode: "A".repeat(65) })).ok, false);
+  const result = validateSubmission(validSubmission({ promoCode: '<script>alert(1)</script>' }));
+  assert.equal(result.ok, true);
+  const payload = buildOwnerNotificationPayload("test", result.value, "/owner", "owner@example.com");
+  assert.ok(!payload.htmlContent.includes("<SCRIPT>"));
+  assert.ok(payload.htmlContent.includes("&lt;SCRIPT&gt;"));
+  const row = mapLeadToColumns("test", result.value, REQUIRED_SHEET_COLUMNS);
+  assert.ok(row[REQUIRED_SHEET_COLUMNS.indexOf("Internal Notes")].startsWith("Website request"));
+});

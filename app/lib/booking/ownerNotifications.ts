@@ -157,6 +157,7 @@ function ownerNotificationHtml(
     ["ZIP", lead.normalizedAddress.zip],
     ["Service type(s)", lead.services.join(", ")],
     ["Appointment type", lead.appointmentType],
+    ["Promo code (manual review; no discount applied)", lead.promoCode || "None"],
     ["Requested date", new Date(lead.requestedSlot.start).toISOString().slice(0, 10)],
     ["Requested time", lead.requestedSlot.label],
   ];
@@ -207,6 +208,7 @@ function ownerNotificationText(
     `ZIP: ${lead.normalizedAddress.zip}`,
     `Service type(s): ${lead.services.join(", ")}`,
     `Appointment type: ${lead.appointmentType}`,
+    `Promo code (manual review; no discount applied): ${lead.promoCode || "None"}`,
     `Project description: ${lead.projectDescription}`,
     `Requested date: ${new Date(lead.requestedSlot.start).toISOString().slice(0, 10)}`,
     `Requested time: ${lead.requestedSlot.label}`,
