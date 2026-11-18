@@ -84,6 +84,14 @@ export function validateSubmission(input: unknown): ValidationResult<NormalizedL
     errors.projectDescription = "Keep the project description under 1,400 characters.";
   }
 
+  // Capture for manual review only; never calculate or enforce a discount here.
+  const promoCode = typeof data.promoCode === "string" ? normalizeText(data.promoCode).toUpperCase() : "";
+  if (data.promoCode != null && typeof data.promoCode !== "string") {
+    errors.promoCode = "Enter a valid promotional code.";
+  } else if (promoCode.length > 64) {
+    errors.promoCode = "Keep the promotional code to 64 characters or fewer.";
+  }
+
   const photos = Array.isArray(data.photos) ? data.photos : [];
   if (photos.length > MAX_PHOTO_COUNT) {
     errors.photos = `Upload no more than ${MAX_PHOTO_COUNT} photos.`;
@@ -124,6 +132,7 @@ export function validateSubmission(input: unknown): ValidationResult<NormalizedL
       services: data.services!,
       appointmentType: data.appointmentType!,
       projectDescription: description,
+      promoCode,
       photos,
       address: normalizedAddress,
       normalizedAddress,
@@ -239,7 +248,9 @@ export function mapLeadToColumns(
     "Requested Date": requestedDate,
     "Requested Time": requestedTime,
     Source: LEAD_SOURCE,
-    "Internal Notes": "Website request awaiting owner review.",
+    "Internal Notes": lead.promoCode
+      ? `Website request awaiting owner review. Promo code: ${lead.promoCode}. Promotional discount pending manual management review; no discount applied.`
+      : "Website request awaiting owner review.",
   };
 
   return headers.map((header) => escapeSheetCell(values[header] ?? ""));

@@ -1,8 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useLayoutEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import Link from "next/link";
+import Image from "next/image";
 import { upload } from "@vercel/blob/client";
 import {
   MAX_PHOTO_AGGREGATE_SIZE_BYTES,
@@ -60,6 +61,7 @@ type FormState = {
   email: string;
   phone: string;
   requestedSlot: Slot | null;
+  promoCode: string;
   honeypot: string;
   startedAt: number;
   idempotencyKey: string;
@@ -79,6 +81,7 @@ const initialState: FormState = {
   email: "",
   phone: "",
   requestedSlot: null,
+  promoCode: "",
   honeypot: "",
   startedAt: Date.now(),
   idempotencyKey: crypto.randomUUID(),
@@ -94,6 +97,20 @@ export function BookingFlow() {
   const [success, setSuccess] = useState<{ leadId: string; requestedTime: string } | null>(
     null,
   );
+  const confirmationRef = useRef<HTMLDivElement>(null);
+  const confirmationHeadingRef = useRef<HTMLHeadingElement>(null);
+
+  useLayoutEffect(() => {
+    if (!success || !confirmationRef.current) return;
+
+    // Position the whole welcome above the fold, clear of the sticky site header.
+    // Instant scrolling also overrides the site's global smooth-scroll behavior.
+    const headerHeight = document.querySelector(".site-header")?.getBoundingClientRect().height ?? 0;
+    const top = window.scrollY + confirmationRef.current.getBoundingClientRect().top;
+    window.scrollTo({ top: Math.max(0, top - headerHeight - 16), behavior: "instant" });
+    confirmationHeadingRef.current?.focus({ preventScroll: true });
+  }, [success]);
+
   const totalSteps = 8;
   const progress = Math.round(((step + 1) / totalSteps) * 100);
 
@@ -273,6 +290,7 @@ export function BookingFlow() {
             phone: form.phone,
           },
           requestedSlot: form.requestedSlot,
+          promoCode: form.promoCode.trim(),
           honeypot: form.honeypot,
           startedAt: form.startedAt,
           idempotencyKey: form.idempotencyKey,
@@ -302,16 +320,24 @@ export function BookingFlow() {
 
   if (success) {
     return (
-      <section className="booking-shell section">
-        <div className="booking-success">
+      <section className="booking-shell section" aria-labelledby="booking-thanks">
+        <div className="booking-success" role="status" ref={confirmationRef}>
+          <div className="booking-success__mascot">
+            <Image src="/winston-logo.png" alt="Winston, the Wade Home Services mascot, wearing a Santa hat and giving two thumbs up" width={1254} height={1254} sizes="(max-width: 461px) 120px, (max-width: 661px) 26vw, 172px" priority />
+            <span className="booking-success__check" aria-hidden="true">✓</span>
+          </div>
           <p className="eyebrow">Request received</p>
-          <h2>Thanks, {firstName(form.name)}.</h2>
-          <p className="booking-reference">Request #{success.leadId}</p>
-          <p>Requested time: {success.requestedTime}</p>
-          <p>
-            This appointment is pending confirmation. Our team will review the
-            details and contact you to confirm the requested time.
-          </p>
+          <h2 id="booking-thanks" ref={confirmationHeadingRef} tabIndex={-1} aria-describedby="booking-success-message">Thanks, {firstName(form.name)}!</h2>
+          <h3>We&apos;re excited to serve you!</h3>
+          <p id="booking-success-message" className="booking-success__message">Your request has been successfully submitted! You&apos;ll receive a confirmation shortly.</p>
+          <div className="booking-success__details">
+            <p>Requested time: {success.requestedTime}</p>
+            <p>
+              This appointment is pending confirmation. Our team will review the
+              details and contact you to confirm the requested time.
+            </p>
+          </div>
+          <p className="booking-success__closing">Thank you for choosing Wade Home Services!</p>
           <div className="actions">
             <Link className="button button--primary" href="/">
               Return Home
@@ -533,6 +559,22 @@ export function BookingFlow() {
                 No times are available for this date. Please choose another date.
               </p>
             ) : null}
+            <label className="field booking-promo">
+              <span>Have a promo code?</span>
+              <input
+                type="text"
+                name="promoCode"
+                placeholder="Enter promo code (optional)"
+                value={form.promoCode}
+                maxLength={64}
+                autoCapitalize="characters"
+                autoComplete="off"
+                spellCheck={false}
+                aria-describedby="promo-code-note"
+                onChange={(event) => update("promoCode", event.target.value.toUpperCase())}
+              />
+              <small id="promo-code-note" className="form-note">Promotions are reviewed and manually applied by our team.</small>
+            </label>
           </StepBlock>
         ) : null}
 
@@ -544,6 +586,7 @@ export function BookingFlow() {
               <Summary label="Address" value={`${form.street}, ${form.city}, ${form.state} ${form.zip}`} />
               <Summary label="Contact" value={`${form.name} / ${form.email} / ${form.phone}`} />
               <Summary label="Photos" value={`${form.photos.length} uploaded`} />
+              <Summary label="Promo Code" value={form.promoCode.trim() || "None"} />
               <Summary label="Requested Time" value={form.requestedSlot?.label ?? ""} />
             </div>
             <FieldError message={errors.submit} />

@@ -32,6 +32,7 @@ export type BookingSubmission = {
     end: string;
     label: string;
   };
+  promoCode?: string;
   honeypot?: string;
   startedAt: number;
   turnstileToken?: string;
