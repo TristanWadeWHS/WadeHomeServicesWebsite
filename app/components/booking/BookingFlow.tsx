@@ -323,7 +323,7 @@ export function BookingFlow() {
       <section className="booking-shell section" aria-labelledby="booking-thanks">
         <div className="booking-success" role="status" ref={confirmationRef}>
           <div className="booking-success__mascot">
-            <Image src="/winston-logo.png" alt="Winston, the Wade Home Services mascot, giving two thumbs up" width={1024} height={1024} priority />
+            <Image src="/winston-logo.png" alt="Winston, the Wade Home Services mascot, wearing a Santa hat and giving two thumbs up" width={1254} height={1254} sizes="(max-width: 461px) 120px, (max-width: 661px) 26vw, 172px" priority />
             <span className="booking-success__check" aria-hidden="true">✓</span>
           </div>
           <p className="eyebrow">Request received</p>

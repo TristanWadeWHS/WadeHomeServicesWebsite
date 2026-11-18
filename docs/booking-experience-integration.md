@@ -7,7 +7,7 @@ This branch starts from GitHub `main` at `087f7b75943f04901abe166c58ef36c334d1e8
 - Step 7 has one optional promo input, normalized to uppercase; form state persists through navigation and Step 8 shows the code.
 - Server validation bounds codes to 64 characters and records them in existing booking Internal Notes. Owner emails include the code in HTML and plain text. Blank and unknown codes remain valid for manual review.
 - No automatic discount calculation, minimum purchase, maximum savings, or expiration rejection was introduced. No sheet schema migration or environment-variable change is needed.
-- Confirmation uses the existing Winston artwork, customer first name, actual returned request number, and pending-confirmation messaging. It scrolls instantly below the sticky header and focuses the heading with an accessible success description. Existing reduced-motion support remains.
+- Confirmation uses the customer-provided holiday Winston artwork at a smaller responsive width (120–172px), customer first name, actual returned request number, and pending-confirmation messaging. It scrolls instantly below the sticky header and focuses the heading with an accessible success description. Existing reduced-motion support remains.
 - Current-main Command Center features, digest/test-email actions, authenticated sender/reply-to identity, cron schedules, booking storage implementation, package scripts/dependencies, and production-related settings are unchanged. In particular, `ownerNotifications.ts` retains the shared `EMAIL_SENDER` and `EMAIL_REPLY_TO` imports; only two promo display fields were added.
 
 ## Happy HAULidays manual campaign

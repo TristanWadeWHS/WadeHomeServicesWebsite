@@ -662,7 +662,7 @@ p {
 
 .booking-success__mascot {
   position: relative;
-  width: clamp(160px, 35vw, 230px);
+  width: clamp(120px, 26vw, 172px);
   margin: 0 auto 24px;
   animation: booking-welcome 650ms ease-out both;
 }
