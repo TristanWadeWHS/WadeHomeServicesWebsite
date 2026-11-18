@@ -331,7 +331,6 @@ export function BookingFlow() {
           <h3>We&apos;re excited to serve you!</h3>
           <p id="booking-success-message" className="booking-success__message">Your request has been successfully submitted! You&apos;ll receive a confirmation shortly.</p>
           <div className="booking-success__details">
-            <p className="booking-reference">Your Request Number: #{success.leadId}</p>
             <p>Requested time: {success.requestedTime}</p>
             <p>
               This appointment is pending confirmation. Our team will review the

@@ -99,7 +99,8 @@ try {
         assert.equal(await heading.getAttribute("aria-describedby"), "booking-success-message");
         assert.equal(await page.locator(".booking-success").getAttribute("role"), "status");
         assert.ok((await page.locator("#booking-success-message").innerText()).includes("successfully submitted"));
-        assert.ok(await page.getByText(`Your Request Number: #${requestId}`, { exact: true }).isVisible());
+        assert.equal(await page.getByText(/Your Request Number/).count(), 0);
+        assert.ok(!(await page.locator(".booking-success").innerText()).includes(requestId));
         await page.waitForFunction(() => document.querySelector(".booking-success__mascot img")?.naturalWidth > 0);
         await page.waitForTimeout(750); // Let the existing entrance animation finish.
         assert.equal(await page.evaluate(() => scrollY), position.scrollY, "image/animation causes no later scroll");
